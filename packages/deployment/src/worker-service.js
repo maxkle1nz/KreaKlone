@@ -1,5 +1,6 @@
 import { createServer } from 'node:http';
 import { randomUUID } from 'node:crypto';
+import { createSyntheticPreviewProvider } from './preview-provider.js';
 
 function json(response, statusCode, body) {
   response.writeHead(statusCode, { 'content-type': 'application/json; charset=utf-8' });
@@ -38,32 +39,6 @@ async function readJsonBody(request) {
   return JSON.parse(Buffer.concat(chunks).toString('utf8'));
 }
 
-function createPreviewPayload(job, manifest) {
-  const variants = Array.from({ length: job.burstCount }, (_, ordinal) => ({
-    variantId: `${job.jobId}_v${ordinal + 1}`,
-    ordinal,
-    seed: job.sessionVersion * 100 + ordinal + 1,
-    mimeType: 'image/svg+xml',
-    uri: createSvgDataUri({
-      title: `${manifest.displayName} preview ${ordinal + 1}/${job.burstCount}`,
-      subtitle: `${job.previewModel} • ${job.roi.width}×${job.roi.height}`,
-      accent: '#38bdf8',
-      bodyLines: [
-        `session: ${job.sessionId}`,
-        `queue: ${manifest.queue}`,
-        `gpu target: ${manifest.gpuTargets[0] ?? 'unknown'}`
-      ]
-    })
-  }));
-
-  return {
-    jobId: job.jobId,
-    serviceId: manifest.serviceId,
-    queue: manifest.queue,
-    variants
-  };
-}
-
 function createSingleAssetPayload(job, manifest, kind, accent) {
   return {
     jobId: job.jobId,
@@ -84,44 +59,73 @@ function createSingleAssetPayload(job, manifest, kind, accent) {
   };
 }
 
-export function createWorkerService(manifest, { port = 4100, host = '127.0.0.1' } = {}) {
+function createDefaultPreviewProvider(manifest) {
+  return createSyntheticPreviewProvider({ manifest });
+}
+
+function normalizePreviewResponse(payload, job, manifest) {
+  return {
+    ...payload,
+    jobId: payload?.jobId ?? job.jobId,
+    serviceId: payload?.serviceId ?? manifest.serviceId,
+    queue: payload?.queue ?? manifest.queue,
+    variants: Array.isArray(payload?.variants) ? payload.variants : []
+  };
+}
+
+function sendError(response, error) {
+  const statusCode = Number.isInteger(error?.statusCode) ? error.statusCode : 500;
+  json(response, statusCode, { error: error instanceof Error ? error.message : 'unknown error' });
+}
+
+export function createWorkerService(manifest, { port = 4100, host = '127.0.0.1', previewProvider } = {}) {
+  const resolvedPreviewProvider = previewProvider ?? createDefaultPreviewProvider(manifest);
   const server = createServer(async (request, response) => {
-    if (request.method === 'GET' && request.url === '/health') {
-      json(response, 200, {
-        ok: true,
-        serviceId: manifest.serviceId,
-        queue: manifest.queue,
-        keepWarm: manifest.keepWarm,
-        models: manifest.models,
-        gpuTargets: manifest.gpuTargets
-      });
-      return;
-    }
+    try {
+      if (request.method === 'GET' && request.url === '/health') {
+        json(response, 200, {
+          ok: true,
+          serviceId: manifest.serviceId,
+          queue: manifest.queue,
+          keepWarm: manifest.keepWarm,
+          models: manifest.models,
+          gpuTargets: manifest.gpuTargets,
+          previewProvider: manifest.queue === 'preview'
+            ? (resolvedPreviewProvider.describe?.() ?? resolvedPreviewProvider.mode ?? 'custom')
+            : undefined
+        });
+        return;
+      }
 
-    if (request.method === 'GET' && request.url === '/manifest') {
-      json(response, 200, manifest);
-      return;
-    }
+      if (request.method === 'GET' && request.url === '/manifest') {
+        json(response, 200, manifest);
+        return;
+      }
 
-    if (request.method === 'POST' && request.url === '/jobs/preview') {
-      const body = await readJsonBody(request);
-      json(response, 202, createPreviewPayload(body.job, manifest));
-      return;
-    }
+      if (request.method === 'POST' && request.url === '/jobs/preview') {
+        const body = await readJsonBody(request);
+        const generatePreview = resolvedPreviewProvider.generatePreview ?? resolvedPreviewProvider.generate;
+        const payload = await generatePreview.call(resolvedPreviewProvider, body.job, manifest, { request });
+        json(response, 202, normalizePreviewResponse(payload, body.job, manifest));
+        return;
+      }
 
-    if (request.method === 'POST' && request.url === '/jobs/refine') {
-      const body = await readJsonBody(request);
-      json(response, 202, createSingleAssetPayload(body.job, manifest, 'refine', '#22c55e'));
-      return;
-    }
+      if (request.method === 'POST' && request.url === '/jobs/refine') {
+        const body = await readJsonBody(request);
+        json(response, 202, createSingleAssetPayload(body.job, manifest, 'refine', '#22c55e'));
+        return;
+      }
 
-    if (request.method === 'POST' && request.url === '/jobs/upscale') {
-      const body = await readJsonBody(request);
-      json(response, 202, createSingleAssetPayload(body.job, manifest, 'upscale', '#f59e0b'));
-      return;
-    }
+      if (request.method === 'POST' && request.url === '/jobs/upscale') {
+        const body = await readJsonBody(request);
+        json(response, 202, createSingleAssetPayload(body.job, manifest, 'upscale', '#f59e0b'));
+        return;
+      }
 
-    json(response, 404, { error: 'not found' });
+      json(response, 404, { error: 'not found' });
+    } catch (error) {
+      sendError(response, error);
+    }
   });
 
   return {

@@ -49,13 +49,22 @@ async function serveStatic(request, response) {
 export function createAppServer(options = {}) {
   const port = options.port ?? Number.parseInt(process.env.PORT ?? '3000', 10);
   const host = options.host ?? process.env.HOST ?? '127.0.0.1';
-  const runtime = options.runtime ?? createMvpRuntime({
-    workerClients: new WorkerClients({
-      previewWorkerUrl: process.env.PREVIEW_WORKER_URL,
-      refineWorkerUrl: process.env.REFINE_WORKER_URL,
-      upscaleWorkerUrl: process.env.UPSCALE_WORKER_URL
-    })
-  });
+  let runtime = options.runtime;
+
+  function getRuntime() {
+    if (!runtime) {
+      runtime = createMvpRuntime({
+        workerClients: new WorkerClients({
+          previewWorkerUrl: process.env.PREVIEW_WORKER_URL,
+          refineWorkerUrl: process.env.REFINE_WORKER_URL,
+          upscaleWorkerUrl: process.env.UPSCALE_WORKER_URL
+        })
+      });
+    }
+
+    return runtime;
+  }
+
   const server = createHttpServer(async (request, response) => {
     try {
       if (!request.url) {
@@ -67,46 +76,46 @@ export function createAppServer(options = {}) {
         json(response, 200, {
           ok: true,
           websocketConnections: websocketGateway.connectionCount(),
-          activeSessions: runtime.getRuntimeMetrics().session_active_count
+          activeSessions: getRuntime().getRuntimeMetrics().session_active_count
         });
         return;
       }
 
       if (request.method === 'POST' && request.url === '/api/sessions') {
         const body = await readJsonBody(request);
-        const { session, queues } = runtime.createSession(body.sessionId);
+        const { session, queues } = getRuntime().createSession(body.sessionId);
         json(response, 201, { session, queues });
         return;
       }
 
       if (request.method === 'POST' && request.url === '/api/assets/upload') {
-        const asset = runtime.uploadAsset(await readJsonBody(request));
+        const asset = getRuntime().uploadAsset(await readJsonBody(request));
         json(response, 201, asset);
         return;
       }
 
       if (request.method === 'POST' && request.url === '/api/refine') {
         const body = await readJsonBody(request);
-        const result = runtime.requestRefine(body.sessionId, body.variantId);
+        const result = getRuntime().requestRefine(body.sessionId, body.variantId);
         json(response, 202, result);
         return;
       }
 
       if (request.method === 'POST' && request.url === '/api/upscale') {
         const body = await readJsonBody(request);
-        const result = runtime.requestUpscale(body.sessionId, body.assetId);
+        const result = getRuntime().requestUpscale(body.sessionId, body.assetId);
         json(response, 202, result);
         return;
       }
 
       if (request.method === 'GET' && request.url === '/api/benchmarks') {
-        json(response, 200, runtime.getBenchmarks());
+        json(response, 200, getRuntime().getBenchmarks());
         return;
       }
 
       if (request.method === 'GET' && request.url.startsWith('/api/assets/')) {
         const assetId = request.url.split('/').pop();
-        const asset = runtime.getAsset(assetId);
+        const asset = getRuntime().getAsset(assetId);
         if (!asset) {
           json(response, 404, { error: 'asset not found' });
           return;
@@ -117,7 +126,7 @@ export function createAppServer(options = {}) {
 
       if (request.method === 'POST' && request.url === '/api/preview') {
         const body = await readJsonBody(request);
-        const result = runtime.requestPreview(body.sessionId, { burstCount: body.burstCount });
+        const result = getRuntime().requestPreview(body.sessionId, { burstCount: body.burstCount });
         json(response, 202, result);
         return;
       }
@@ -136,14 +145,16 @@ export function createAppServer(options = {}) {
   const websocketGateway = attachWebSocketServer(server, {
     path: '/ws',
     onConnection(connection) {
-      runtime.handleConnection(connection);
+      getRuntime().handleConnection(connection);
     }
   });
 
   return {
     host,
     port,
-    runtime,
+    get runtime() {
+      return getRuntime();
+    },
     server,
     websocketGateway,
     async start() {

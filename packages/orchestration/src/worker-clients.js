@@ -3,6 +3,28 @@ function buildServiceError(serviceName, response, payload) {
   return new Error(`${serviceName} worker error: ${details}`);
 }
 
+function normalizePreviewVariant(variant, index, job) {
+  return {
+    variantId: variant?.variantId ?? `${job.jobId}_v${index + 1}`,
+    ordinal: Number.isInteger(variant?.ordinal) ? variant.ordinal : index,
+    seed: Number.isFinite(variant?.seed) ? variant.seed : job.sessionVersion * 100 + index + 1,
+    mimeType: variant?.mimeType ?? 'image/png',
+    uri: variant?.uri,
+    metadata: variant?.metadata ?? {}
+  };
+}
+
+function normalizePreviewPayload(payload, job) {
+  return {
+    ...payload,
+    jobId: payload?.jobId ?? job.jobId,
+    queue: payload?.queue ?? 'preview',
+    serviceId: payload?.serviceId,
+    provider: payload?.provider ?? { mode: 'synthetic' },
+    variants: Array.isArray(payload?.variants) ? payload.variants.map((variant, index) => normalizePreviewVariant(variant, index, job)) : []
+  };
+}
+
 async function postJson(url, body, { signal } = {}) {
   const response = await fetch(url, {
     method: 'POST',
@@ -42,7 +64,8 @@ export class WorkerClients {
     if (!this.hasRemotePreview()) {
       return null;
     }
-    return postJson(new URL('/jobs/preview', this.previewWorkerUrl).toString(), { job }, { signal });
+    return postJson(new URL('/jobs/preview', this.previewWorkerUrl).toString(), { job }, { signal })
+      .then((payload) => normalizePreviewPayload(payload, job));
   }
 
   requestRefine(job, { signal } = {}) {

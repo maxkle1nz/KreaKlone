@@ -1,8 +1,9 @@
 export class CancelableJobQueue {
-  constructor({ name, worker, concurrency = 1 }) {
+  constructor({ name, worker, concurrency = 1, onError } = {}) {
     this.name = name;
     this.worker = worker;
     this.concurrency = concurrency;
+    this.onError = onError;
     this.pending = [];
     this.active = new Map();
     this.sequence = 0;
@@ -77,7 +78,9 @@ export class CancelableJobQueue {
         meta: entry.meta,
         signal: entry.abortController.signal
       })
-        .catch(() => undefined)
+        .catch((error) => {
+          this.onError?.(error, entry);
+        })
         .finally(() => {
           this.active.delete(entry.id);
           this.#resolveIdleIfNeeded();

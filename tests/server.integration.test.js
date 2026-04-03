@@ -1,10 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createAppServer } from '../apps/server/src/server.js';
-import { createWorkerService } from '../packages/deployment/src/index.js';
+import { createRealPreviewProvider, createWorkerService } from '../packages/deployment/src/index.js';
 import { previewWorkerManifest } from '../preview-worker/index.js';
 import { refineWorkerManifest } from '../refine-worker/index.js';
 import { upscaleWorkerManifest } from '../upscale-worker/index.js';
+import { startRealPreviewAdapter } from './helpers/real-preview-adapter.js';
 
 function waitFor(socket, type, predicate = () => true, timeoutMs = 2000) {
   return new Promise((resolve, reject) => {
@@ -26,8 +27,8 @@ function waitFor(socket, type, predicate = () => true, timeoutMs = 2000) {
   });
 }
 
-test('http + websocket scaffold supports session join and progressive previews', async () => {
-  const previewService = createWorkerService(previewWorkerManifest, { port: 0 });
+async function startWorkerStack({ previewProvider } = {}) {
+  const previewService = createWorkerService(previewWorkerManifest, { port: 0, previewProvider });
   const refineService = createWorkerService(refineWorkerManifest, { port: 0 });
   const upscaleService = createWorkerService(upscaleWorkerManifest, { port: 0 });
   const [previewUrl, refineUrl, upscaleUrl] = await Promise.all([
@@ -35,17 +36,48 @@ test('http + websocket scaffold supports session join and progressive previews',
     refineService.start(),
     upscaleService.start()
   ]);
+
+  return {
+    previewService,
+    refineService,
+    upscaleService,
+    previewUrl,
+    refineUrl,
+    upscaleUrl,
+    async stop() {
+      await Promise.all([previewService.stop(), refineService.stop(), upscaleService.stop()]);
+    }
+  };
+}
+
+async function startAppWithWorkers(workerStack) {
+  process.env.PREVIEW_WORKER_URL = workerStack.previewUrl;
+  process.env.REFINE_WORKER_URL = workerStack.refineUrl;
+  process.env.UPSCALE_WORKER_URL = workerStack.upscaleUrl;
   const app = createAppServer({
     port: 0,
     host: '127.0.0.1'
   });
-  process.env.PREVIEW_WORKER_URL = previewUrl;
-  process.env.REFINE_WORKER_URL = refineUrl;
-  process.env.UPSCALE_WORKER_URL = upscaleUrl;
   const baseUrl = await app.start();
 
+  return {
+    app,
+    baseUrl,
+    async stop() {
+      await app.stop();
+      delete process.env.PREVIEW_WORKER_URL;
+      delete process.env.REFINE_WORKER_URL;
+      delete process.env.UPSCALE_WORKER_URL;
+    }
+  };
+}
+
+test('http + websocket scaffold supports session join and progressive previews', async () => {
+  const workerStack = await startWorkerStack();
+  const appStack = await startAppWithWorkers(workerStack);
+
   try {
-    const sessionResponse = await fetch(`${baseUrl}/api/sessions`, {
+    const sessionResponse = await fetch(`${appStack.baseUrl}/api/sessions`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({})
@@ -53,15 +85,19 @@ test('http + websocket scaffold supports session join and progressive previews',
     const sessionPayload = await sessionResponse.json();
     assert.equal(sessionResponse.status, 201);
 
-    const benchmarksResponse = await fetch(`${baseUrl}/api/benchmarks`);
+    const benchmarksResponse = await fetch(`${appStack.baseUrl}/api/benchmarks`);
     const benchmarksPayload = await benchmarksResponse.json();
     assert.equal(benchmarksResponse.status, 200);
     assert.equal(benchmarksPayload.deploymentScaffold.requiredDirectories.includes('preview-worker'), true);
 
-    const socket = new WebSocket(baseUrl.replace('http', 'ws') + '/ws');
+    const socket = new WebSocket(appStack.baseUrl.replace('http', 'ws') + '/ws');
     await new Promise((resolve, reject) => {
       socket.addEventListener('open', resolve, { once: true });
       socket.addEventListener('error', reject, { once: true });
+    });
+    const received = [];
+    socket.addEventListener('message', (event) => {
+      received.push(JSON.parse(event.data));
     });
 
     socket.send(JSON.stringify({ type: 'session.join', payload: { sessionId: sessionPayload.session.sessionId } }));
@@ -73,24 +109,141 @@ test('http + websocket scaffold supports session join and progressive previews',
     socket.send(JSON.stringify({ type: 'preview.request', payload: { sessionId: sessionPayload.session.sessionId, burstCount: 4 } }));
 
     await startedPromise;
-    const partials = [];
-    while (partials.length < 4) {
-      partials.push(await waitFor(socket, 'preview.partial', (payload) => !partials.some((entry) => entry.payload.variantId === payload.variantId)));
-    }
     const completed = await completedPromise;
+    const partials = received.filter((message) => message.type === 'preview.partial');
 
     assert.equal(partials.length, 4);
     assert.equal(completed.payload.totalVariants, 4);
+    const assetResponse = await fetch(`${appStack.baseUrl}/api/assets/${partials[0].payload.assetId}`);
+    const assetPayload = await assetResponse.json();
+    assert.equal(assetResponse.status, 200);
+    assert.equal(assetPayload.metadata.serviceId, 'preview-worker');
+    assert.equal(assetPayload.metadata.queue, 'preview');
 
     await new Promise((resolve) => {
       socket.addEventListener('close', resolve, { once: true });
       socket.close();
     });
   } finally {
-    await app.stop();
-    await Promise.all([previewService.stop(), refineService.stop(), upscaleService.stop()]);
-    delete process.env.PREVIEW_WORKER_URL;
-    delete process.env.REFINE_WORKER_URL;
-    delete process.env.UPSCALE_WORKER_URL;
+    await appStack.stop();
+    await workerStack.stop();
+  }
+});
+
+test('http + websocket scaffold preserves real preview worker responses through runtime assets', async () => {
+  const adapter = await startRealPreviewAdapter();
+  const workerStack = await startWorkerStack({
+    previewProvider: createRealPreviewProvider({ endpointUrl: adapter.url })
+  });
+  const appStack = await startAppWithWorkers(workerStack);
+
+  try {
+    const sessionResponse = await fetch(`${appStack.baseUrl}/api/sessions`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({})
+    });
+    const sessionPayload = await sessionResponse.json();
+    assert.equal(sessionResponse.status, 201);
+
+    const socket = new WebSocket(appStack.baseUrl.replace('http', 'ws') + '/ws');
+    await new Promise((resolve, reject) => {
+      socket.addEventListener('open', resolve, { once: true });
+      socket.addEventListener('error', reject, { once: true });
+    });
+
+    socket.send(JSON.stringify({ type: 'session.join', payload: { sessionId: sessionPayload.session.sessionId } }));
+    await waitFor(socket, 'session.state', (payload) => payload.sessionId === sessionPayload.session.sessionId);
+
+    socket.send(JSON.stringify({
+      type: 'canvas.event',
+      payload: {
+        sessionId: sessionPayload.session.sessionId,
+        event: { type: 'prompt.update', positive: 'Glass tower at dusk', negative: '' }
+      }
+    }));
+    await waitFor(socket, 'session.state', (payload) => payload.session.prompt.positive === 'Glass tower at dusk');
+
+    const startedPromise = waitFor(socket, 'preview.started');
+    const firstPartialPromise = waitFor(socket, 'preview.partial');
+    const completedPromise = waitFor(socket, 'preview.completed');
+
+    socket.send(JSON.stringify({ type: 'preview.request', payload: { sessionId: sessionPayload.session.sessionId, burstCount: 4 } }));
+
+    await startedPromise;
+    const firstPartial = await firstPartialPromise;
+    const completed = await completedPromise;
+
+    assert.match(firstPartial.payload.uri, /^data:image\/png;base64,/);
+    assert.equal(completed.payload.totalVariants, 4);
+    assert.equal(adapter.requests.length, 1);
+    assert.equal(adapter.requests[0].job.prompt.positive, 'Glass tower at dusk');
+
+    const assetResponse = await fetch(`${appStack.baseUrl}/api/assets/${firstPartial.payload.assetId}`);
+    const assetPayload = await assetResponse.json();
+    assert.equal(assetResponse.status, 200);
+    assert.equal(assetPayload.kind, 'preview');
+    assert.equal(assetPayload.mimeType, 'image/png');
+    assert.equal(assetPayload.uri, firstPartial.payload.uri);
+    assert.equal(assetPayload.metadata.serviceId, 'preview-worker');
+    assert.equal(assetPayload.metadata.queue, 'preview');
+    assert.equal(assetPayload.metadata.provider.mode, 'real');
+
+    await new Promise((resolve) => {
+      socket.addEventListener('close', resolve, { once: true });
+      socket.close();
+    });
+  } finally {
+    await appStack.stop();
+    await workerStack.stop();
+    await adapter.stop();
+  }
+});
+
+test('worker failures become explicit job.failed events instead of being swallowed', async () => {
+  const workerStack = await startWorkerStack({
+    previewProvider: {
+      describe() {
+        return { name: 'real-failing-test' };
+      },
+      async generatePreview() {
+        throw new Error('preview backend unavailable');
+      }
+    }
+  });
+  const appStack = await startAppWithWorkers(workerStack);
+
+  try {
+    const sessionResponse = await fetch(`${appStack.baseUrl}/api/sessions`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({})
+    });
+    const sessionPayload = await sessionResponse.json();
+
+    const socket = new WebSocket(appStack.baseUrl.replace('http', 'ws') + '/ws');
+    await new Promise((resolve, reject) => {
+      socket.addEventListener('open', resolve, { once: true });
+      socket.addEventListener('error', reject, { once: true });
+    });
+
+    socket.send(JSON.stringify({ type: 'session.join', payload: { sessionId: sessionPayload.session.sessionId } }));
+    await waitFor(socket, 'session.state', (payload) => payload.sessionId === sessionPayload.session.sessionId);
+
+    socket.send(JSON.stringify({ type: 'preview.request', payload: { sessionId: sessionPayload.session.sessionId, burstCount: 2 } }));
+    const failure = await waitFor(socket, 'job.failed', (payload) => payload.queue === 'preview');
+    assert.match(failure.payload.error, /preview backend unavailable/);
+
+    const benchmarksResponse = await fetch(`${appStack.baseUrl}/api/benchmarks`);
+    const benchmarksPayload = await benchmarksResponse.json();
+    assert.equal(benchmarksPayload.runtimeMetrics.worker_failure_count >= 1, true);
+
+    await new Promise((resolve) => {
+      socket.addEventListener('close', resolve, { once: true });
+      socket.close();
+    });
+  } finally {
+    await appStack.stop();
+    await workerStack.stop();
   }
 });

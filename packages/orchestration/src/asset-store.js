@@ -34,13 +34,14 @@ export class InMemoryAssetStore {
     this.assets = new Map();
   }
 
-  createUpload({ name = 'upload.png', uri, mimeType = 'image/png', kind = 'upload' }) {
+  createUpload({ name = 'upload.png', uri, mimeType = 'image/png', kind = 'upload', metadata = {} }) {
     const asset = {
       assetId: `asset_${randomUUID()}`,
       name,
       kind,
       mimeType,
       uri,
+      metadata,
       createdAt: new Date().toISOString()
     };
     this.assets.set(asset.assetId, asset);

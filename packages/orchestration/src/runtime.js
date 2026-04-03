@@ -37,6 +37,35 @@ function makeQueueSnapshot(queue) {
   return queue.snapshot();
 }
 
+function fileExtensionForMimeType(mimeType = '') {
+  if (mimeType === 'image/svg+xml') {
+    return 'svg';
+  }
+  if (mimeType === 'image/png') {
+    return 'png';
+  }
+  if (mimeType === 'image/jpeg') {
+    return 'jpg';
+  }
+  if (mimeType === 'image/webp') {
+    return 'webp';
+  }
+  return 'bin';
+}
+
+function buildRemoteAssetName(baseName, mimeType) {
+  return `${baseName}.${fileExtensionForMimeType(mimeType)}`;
+}
+
+function createPreviewVariantMap(remotePayload) {
+  const variants = Array.isArray(remotePayload?.variants) ? remotePayload.variants : [];
+  return new Map(
+    variants
+      .filter((variant) => variant && Number.isInteger(variant.ordinal))
+      .map((variant) => [variant.ordinal, variant])
+  );
+}
+
 function queueSelectionToList(selection) {
   return selection === 'all' ? ['preview', 'refine', 'upscale'] : [selection];
 }
@@ -53,13 +82,16 @@ export class MvpRuntime {
     this.variantIndex = new Map();
     this.metrics = {
       cancelCount: 0,
-      staleDrops: 0
+      staleDrops: 0,
+      workerFailures: 0
     };
 
     this.queues = createQueues({
       preview: (job, context) => this.#runPreviewJob(job, context),
       refine: (job, context) => this.#runRefineJob(job, context),
       upscale: (job, context) => this.#runUpscaleJob(job, context)
+    }, {
+      onError: (error, entry) => this.#handleQueueError(error, entry)
     });
   }
 
@@ -92,6 +124,7 @@ export class MvpRuntime {
     return {
       cancel_success_rate: this.metrics.cancelCount,
       stale_result_drop_rate: this.metrics.staleDrops,
+      worker_failure_count: this.metrics.workerFailures,
       session_active_count: this.sessions.list().length
     };
   }
@@ -237,8 +270,8 @@ export class MvpRuntime {
     }));
 
     const remotePayload = await this.workerClients.requestPreview(job, { signal });
-    const variants = remotePayload?.variants ?? [];
-    const useRemoteVariants = variants.length > 0;
+    const remoteVariants = createPreviewVariantMap(remotePayload);
+    const useRemoteVariants = remoteVariants.size > 0;
     const seeds = [];
     for (let ordinal = 0; ordinal < job.burstCount; ordinal += 1) {
       if (!useRemoteVariants) {
@@ -249,15 +282,27 @@ export class MvpRuntime {
         return;
       }
 
-      const remoteVariant = variants[ordinal];
+      const remoteVariant = remoteVariants.get(ordinal);
       const seed = remoteVariant?.seed ?? job.sessionVersion * 100 + ordinal + 1;
       const variantId = remoteVariant?.variantId ?? `${job.jobId}_v${ordinal + 1}`;
       const asset = remoteVariant
         ? this.assets.createUpload({
-            name: `${variantId}.svg`,
+            name: buildRemoteAssetName(variantId, remoteVariant.mimeType),
             kind: 'preview',
             mimeType: remoteVariant.mimeType ?? 'image/svg+xml',
-            uri: remoteVariant.uri
+            uri: remoteVariant.uri,
+            metadata: {
+              jobId: job.jobId,
+              sessionId: job.sessionId,
+              sessionVersion: job.sessionVersion,
+              variantId,
+              ordinal,
+              seed,
+              serviceId: remotePayload?.serviceId ?? null,
+              queue: remotePayload?.queue ?? job.queue,
+              provider: remotePayload?.provider ?? null,
+              workerVariant: remoteVariant?.metadata ?? null
+            }
           })
         : this.assets.createSyntheticAsset({
             kind: 'preview',
@@ -324,10 +369,18 @@ export class MvpRuntime {
     const sourceVariant = this.variantIndex.get(job.sourceVariantId);
     const asset = remotePayload
       ? this.assets.createUpload({
-          name: `${job.jobId}.svg`,
+          name: buildRemoteAssetName(job.jobId, remotePayload.mimeType),
           kind: 'refine',
           mimeType: remotePayload.mimeType ?? 'image/svg+xml',
-          uri: remotePayload.uri
+          uri: remotePayload.uri,
+          metadata: {
+            jobId: job.jobId,
+            sessionId: job.sessionId,
+            sessionVersion: job.sessionVersion,
+            sourceVariantId: job.sourceVariantId,
+            serviceId: remotePayload.serviceId ?? null,
+            queue: remotePayload.queue ?? job.queue
+          }
         })
       : this.assets.createSyntheticAsset({
           kind: 'refine',
@@ -367,10 +420,19 @@ export class MvpRuntime {
 
     const asset = remotePayload
       ? this.assets.createUpload({
-          name: `${job.jobId}.svg`,
+          name: buildRemoteAssetName(job.jobId, remotePayload.mimeType),
           kind: 'upscale',
           mimeType: remotePayload.mimeType ?? 'image/svg+xml',
-          uri: remotePayload.uri
+          uri: remotePayload.uri,
+          metadata: {
+            jobId: job.jobId,
+            sessionId: job.sessionId,
+            sessionVersion: job.sessionVersion,
+            sourceImageId: job.sourceImageId,
+            selectedVariantId: job.selectedVariantId,
+            serviceId: remotePayload.serviceId ?? null,
+            queue: remotePayload.queue ?? job.queue
+          }
         })
       : this.assets.createSyntheticAsset({
           kind: 'upscale',
@@ -424,6 +486,18 @@ export class MvpRuntime {
     }
 
     return canceled;
+  }
+
+  #handleQueueError(error, entry) {
+    this.metrics.workerFailures += 1;
+    const message = error instanceof Error ? error.message : String(error ?? 'unknown worker failure');
+    this.#broadcast(entry.job.sessionId, envelope('job.failed', {
+      jobId: entry.job.jobId,
+      sessionId: entry.job.sessionId,
+      queue: entry.job.queue,
+      error: message
+    }));
+    this.#sendSessionState(entry.job.sessionId);
   }
 
   #queueForName(queueName) {
