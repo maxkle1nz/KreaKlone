@@ -54,6 +54,7 @@ Complex tasks often fail silently: partial implementations get declared "done", 
    - If an existing relevant snapshot is available, reuse it and record the path in Ralph state.
    - If request ambiguity is high, gather brownfield facts first. When session guidance enables `USE_OMX_EXPLORE_CMD`, prefer `omx explore` for simple read-only repository lookups with narrow, concrete prompts; otherwise use the richer normal explore path. Then run `$deep-interview --quick <task>` to close critical gaps.
    - Do not begin Ralph execution work (delegation, implementation, or verification loops) until snapshot grounding exists. If forced to proceed quickly, note explicit risk tradeoffs.
+   - Runtime contract: if you do intake, PRD prep, or test-spec prep inside Ralph, keep `current_phase` as `executing`. Do **not** write `current_phase: "planning"` for Ralph; the Ralph state contract only accepts `starting`, `executing`, `verifying`, `fixing`, `complete`, `failed`, and `cancelled`.
 1. **Review progress**: Check TODO list and any prior iteration state
 2. **Continue from where you left off**: Pick up incomplete tasks
 3. **Delegate in parallel**: Route tasks to specialist agents at appropriate tiers
@@ -108,6 +109,8 @@ Use the `omx_state` MCP server tools (`state_write`, `state_read`, `state_clear`
   `state_write({mode: "ralph", active: true, iteration: 1, max_iterations: 10, current_phase: "executing", started_at: "<now>", state: {context_snapshot_path: "<snapshot-path>"}})`
 - **On each iteration**:
   `state_write({mode: "ralph", iteration: <current>, current_phase: "executing"})`
+- **During intake or planning-like prep within Ralph**:
+  `state_write({mode: "ralph", iteration: <current>, current_phase: "executing", state: {subphase: "intake" | "prd-prep" | "test-spec-prep"}})`
 - **On verification/fix transition**:
   `state_write({mode: "ralph", current_phase: "verifying"})` or `state_write({mode: "ralph", current_phase: "fixing"})`
 - **On completion**:
