@@ -57,7 +57,7 @@ startup_timeout_sec = 5
 [mcp_servers.omx_team_run]
 command = "node"
 args = ["/opt/homebrew/lib/node_modules/oh-my-codex/dist/mcp/team-server.js"]
-enabled = true
+enabled = false
 startup_timeout_sec = 5
 
 [projects."/Users/cosmophonix/.openclaw/KreaKlone"]
