@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>KreaKlone MVP Scaffold</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="layout">
+      <section class="stage-panel">
+        <div class="toolbar">
+          <div>
+            <p class="eyebrow">Krea-like realtime scaffold</p>
+            <h1>Playful preview, async quality</h1>
+          </div>
+          <div class="actions">
+            <button id="connectButton">Connect session</button>
+            <button id="generateButton" disabled>Generate burst</button>
+            <button id="cancelButton" disabled>Cancel jobs</button>
+          </div>
+        </div>
+
+        <div class="canvas-wrap">
+          <canvas id="stage" width="1024" height="1024"></canvas>
+          <div class="canvas-hint">Drag on the canvas to set an ROI. Prompt edits remain local to that region.</div>
+        </div>
+
+        <div class="controls-grid">
+          <label>
+            Prompt
+            <textarea id="promptInput" rows="3" placeholder="Paint a cinematic neon skyline into the selected region"></textarea>
+          </label>
+          <label>
+            Negative prompt
+            <textarea id="negativePromptInput" rows="3" placeholder="blurry, low detail"></textarea>
+          </label>
+          <label>
+            Reference upload
+            <input id="fileInput" type="file" accept="image/*" />
+          </label>
+          <label>
+            Burst count
+            <input id="burstInput" type="range" min="1" max="8" value="4" />
+            <span id="burstLabel">4 variants</span>
+          </label>
+        </div>
+      </section>
+
+      <aside class="sidebar">
+        <section class="status-card">
+          <h2>Session state</h2>
+          <dl>
+            <div><dt>Session</dt><dd id="sessionIdLabel">—</dd></div>
+            <div><dt>Version</dt><dd id="sessionVersionLabel">0</dd></div>
+            <div><dt>ROI</dt><dd id="roiLabel">full frame</dd></div>
+          </dl>
+          <button id="upscaleButton" disabled>Upscale selected result</button>
+        </section>
+
+        <section class="status-card">
+          <h2>Preview burst</h2>
+          <div id="variants" class="variants"></div>
+        </section>
+
+        <section class="status-card">
+          <h2>Activity log</h2>
+          <ul id="eventLog" class="event-log"></ul>
+        </section>
+      </aside>
+    </main>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

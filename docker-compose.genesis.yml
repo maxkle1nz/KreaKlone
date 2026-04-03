@@ -1,0 +1,63 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: app/Dockerfile
+    environment:
+      PORT: 3000
+      HOST: 0.0.0.0
+      REDIS_URL: redis://redis:6379
+      PREVIEW_WORKER_URL: http://preview-worker:4101
+      REFINE_WORKER_URL: http://refine-worker:4102
+      UPSCALE_WORKER_URL: http://upscale-worker:4103
+    ports:
+      - '3000:3000'
+    depends_on:
+      - redis
+      - preview-worker
+      - refine-worker
+
+  redis:
+    image: redis:7-alpine
+    command: ['redis-server', '/usr/local/etc/redis/redis.conf']
+    volumes:
+      - ./redis/redis.conf:/usr/local/etc/redis/redis.conf:ro
+    ports:
+      - '6379:6379'
+
+  preview-worker:
+    build:
+      context: .
+      dockerfile: preview-worker/Dockerfile
+    environment:
+      PORT: 4101
+      HOST: 0.0.0.0
+      GPU_TARGET: RTX 4090
+      FALLBACK_GPU: L4
+    ports:
+      - '4101:4101'
+
+  refine-worker:
+    build:
+      context: .
+      dockerfile: refine-worker/Dockerfile
+    environment:
+      PORT: 4102
+      HOST: 0.0.0.0
+      GPU_TARGET: L4
+      FALLBACK_GPU: RTX 4090
+    ports:
+      - '4102:4102'
+
+  upscale-worker:
+    profiles: ['upscale']
+    build:
+      context: .
+      dockerfile: upscale-worker/Dockerfile
+    environment:
+      PORT: 4103
+      HOST: 0.0.0.0
+      GPU_TARGET: L4
+      FALLBACK_GPU: RTX 4090
+    ports:
+      - '4103:4103'
