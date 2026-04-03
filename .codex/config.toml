@@ -10,6 +10,7 @@ model_auto_compact_token_limit = 900000
 multi_agent = true
 child_agents_md = true
 apps = false
+tool_call_mcp_elicitation = false
 
 [env]
 USE_OMX_EXPLORE_CMD = "1"
@@ -29,9 +30,6 @@ command = "node"
 args = ["/opt/homebrew/lib/node_modules/oh-my-codex/dist/mcp/state-server.js"]
 enabled = true
 startup_timeout_sec = 5
-
-[mcp_servers.omx_state.tools.state_write]
-approval_mode = "approve"
 
 # OMX Project Memory MCP Server
 [mcp_servers.omx_memory]
