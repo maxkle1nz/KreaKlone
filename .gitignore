@@ -1,1 +1,8 @@
 .omx/
+.codex/log/
+.codex/tmp/
+.codex/.tmp/
+.codex/.personality_migration
+.codex/auth.json
+.codex/.codex-global-state.json
+.codex/skills/.system/
