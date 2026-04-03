@@ -9,6 +9,7 @@ model_auto_compact_token_limit = 900000
 [features]
 multi_agent = true
 child_agents_md = true
+apps = false
 
 [env]
 USE_OMX_EXPLORE_CMD = "1"
