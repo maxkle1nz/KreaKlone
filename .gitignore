@@ -5,4 +5,16 @@
 .codex/.personality_migration
 .codex/auth.json
 .codex/.codex-global-state.json
+.codex/cache/
+.codex/history.jsonl
+.codex/logs_*.sqlite
+.codex/logs_*.sqlite-shm
+.codex/logs_*.sqlite-wal
+.codex/state_*.sqlite
+.codex/state_*.sqlite-shm
+.codex/state_*.sqlite-wal
+.codex/models_cache.json
+.codex/plugins/
+.codex/shell_snapshots/
+.codex/version.json
 .codex/skills/.system/
