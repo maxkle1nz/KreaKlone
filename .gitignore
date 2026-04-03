@@ -15,6 +15,7 @@
 .codex/state_*.sqlite-wal
 .codex/models_cache.json
 .codex/plugins/
+.codex/sessions/
 .codex/shell_snapshots/
 .codex/version.json
 .codex/skills/.system/
