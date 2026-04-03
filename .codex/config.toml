@@ -5,6 +5,10 @@ developer_instructions = "You have oh-my-codex installed. AGENTS.md is your orch
 model = "gpt-5.4"
 model_context_window = 1000000
 model_auto_compact_token_limit = 900000
+approval_policy = "never"
+ask_for_approval = "never"
+dangerously_bypass_approvals_and_sandbox = true
+sandbox_mode = "danger-full-access"
 
 [features]
 multi_agent = true
