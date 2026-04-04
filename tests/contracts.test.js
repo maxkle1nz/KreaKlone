@@ -45,6 +45,15 @@ test('contract validators accept valid envelopes', () => {
     }
   });
   assert.equal(recordEvent.type, 'record.start');
+
+  const pinEvent = validateClientEnvelope({
+    type: 'timeline.pin',
+    payload: {
+      sessionId: 'session_12345678',
+      frameId: 'frame_1'
+    }
+  });
+  assert.equal(pinEvent.type, 'timeline.pin');
 });
 
 test('contract validators reject invalid queue selections', () => {

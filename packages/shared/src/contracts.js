@@ -10,6 +10,9 @@ export const CLIENT_EVENT_TYPES = Object.freeze([
   "timeline.play",
   "timeline.pause",
   "timeline.seek",
+  "timeline.pin",
+  "timeline.delete",
+  "timeline.capacity.set",
   "timeline.loop.set",
   "timeline.loop.clear",
   "record.start",
@@ -191,8 +194,14 @@ export function validateClientEnvelope(message) {
       assertSessionId(message.payload.sessionId);
       break;
     case "timeline.seek":
+    case "timeline.pin":
+    case "timeline.delete":
       assertSessionId(message.payload.sessionId);
-      assertString(message.payload.frameId, "timeline.seek.frameId");
+      assertString(message.payload.frameId, `${message.type}.frameId`);
+      break;
+    case "timeline.capacity.set":
+      assertSessionId(message.payload.sessionId);
+      assertInteger(message.payload.frameCapacity, "timeline.capacity.set.frameCapacity");
       break;
     case "timeline.loop.set":
       assertSessionId(message.payload.sessionId);

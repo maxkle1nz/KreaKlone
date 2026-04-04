@@ -20,6 +20,7 @@ export function createSessionState(sessionId = `session_${randomUUID()}`) {
     activeFrameId: undefined,
     timelineFrames: [],
     loopRange: undefined,
+    frameCapacity: 48,
     latestRefinedAssetId: undefined,
     latestUpscaledAssetId: undefined,
     latestRecordingAssetId: undefined,
@@ -103,10 +104,47 @@ export function selectVariant(state, variantId) {
 }
 
 export function appendTimelineFrame(state, frame) {
+  const capacity = Number.isInteger(state.frameCapacity) ? state.frameCapacity : 48;
+  const pinned = state.timelineFrames.filter((entry) => entry.isPinned && entry.frameId !== frame.frameId);
+  const unpinned = state.timelineFrames.filter((entry) => !entry.isPinned && entry.frameId !== frame.frameId);
+  const nextUnpinned = [...unpinned, frame].slice(-Math.max(1, capacity - pinned.length));
   return {
     ...state,
     activeFrameId: frame.frameId,
-    timelineFrames: [...state.timelineFrames, frame].slice(-48),
+    timelineFrames: [...pinned, ...nextUnpinned],
+    updatedAt: new Date().toISOString()
+  };
+}
+
+export function pinTimelineFrame(state, frameId) {
+  return {
+    ...state,
+    timelineFrames: state.timelineFrames.map((frame) => (
+      frame.frameId === frameId ? { ...frame, isPinned: !frame.isPinned } : frame
+    )),
+    updatedAt: new Date().toISOString()
+  };
+}
+
+export function deleteTimelineFrame(state, frameId) {
+  const timelineFrames = state.timelineFrames.filter((frame) => frame.frameId !== frameId);
+  const activeFrameId = state.activeFrameId === frameId ? timelineFrames.at(-1)?.frameId : state.activeFrameId;
+  return {
+    ...state,
+    timelineFrames,
+    activeFrameId,
+    updatedAt: new Date().toISOString()
+  };
+}
+
+export function setFrameCapacity(state, frameCapacity) {
+  const bounded = Math.max(8, Math.min(400, frameCapacity));
+  const pinned = state.timelineFrames.filter((frame) => frame.isPinned);
+  const unpinned = state.timelineFrames.filter((frame) => !frame.isPinned).slice(-Math.max(1, bounded - pinned.length));
+  return {
+    ...state,
+    frameCapacity: bounded,
+    timelineFrames: [...pinned, ...unpinned],
     updatedAt: new Date().toISOString()
   };
 }

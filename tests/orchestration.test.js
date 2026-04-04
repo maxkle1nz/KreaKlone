@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createMvpRuntime } from '../packages/orchestration/src/index.js';
+import { pinTimelineFrame, setFrameCapacity } from '../packages/shared/src/session-state.js';
 
 function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -52,6 +53,30 @@ test('preview work appends timeline frames and recording returns an asset for th
 
   const recordingEvents = delivered.filter((message) => message.type === 'record.completed');
   assert.equal(recordingEvents.length, 1);
+});
+
+test('timeline capacity trims old unpinned frames while preserving pinned frames', async () => {
+  const runtime = createMvpRuntime({ previewStepMs: 1, refineStepMs: 1, upscaleStepMs: 1 });
+  const { session } = runtime.createSession('session_capacity');
+
+  runtime.joinSession(session.sessionId, {
+    send() {}
+  });
+
+  runtime.requestPreview(session.sessionId, { burstCount: 4 });
+  await runtime.queues.previewQueue.waitForIdle();
+
+  const firstSession = runtime.getSession(session.sessionId);
+  const firstFrameId = firstSession.timelineFrames[0].frameId;
+  runtime.sessions.save(pinTimelineFrame(firstSession, firstFrameId));
+  runtime.sessions.save(setFrameCapacity(runtime.getSession(session.sessionId), 8));
+  runtime.applyCanvasEvent(session.sessionId, { type: 'prompt.update', positive: 'second wave', negative: '' });
+  runtime.requestPreview(session.sessionId, { burstCount: 8 });
+  await runtime.queues.previewQueue.waitForIdle();
+
+  const finalSession = runtime.getSession(session.sessionId);
+  assert.equal(finalSession.timelineFrames.some((frame) => frame.frameId === firstFrameId), true);
+  assert.equal(finalSession.timelineFrames.length, 8);
 });
 
 test('runtime maps worker preview variants by ordinal and preserves worker metadata', async () => {
