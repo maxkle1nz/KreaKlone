@@ -19,3 +19,5 @@
 .codex/shell_snapshots/
 .codex/version.json
 .codex/skills/.system/
+
+.DS_Store
