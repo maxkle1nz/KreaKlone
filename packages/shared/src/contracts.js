@@ -104,6 +104,16 @@ function assertVariantPayload(payload, context) {
   assertRoi(payload.roi, `${context}.roi`);
 }
 
+function assertFramePayload(payload, context) {
+  assertString(payload.jobId, `${context}.jobId`);
+  assertSessionId(payload.sessionId, `${context}.sessionId`);
+  assertInteger(payload.sessionVersion, `${context}.sessionVersion`);
+  assertString(payload.frameId, `${context}.frameId`);
+  assertInteger(payload.ordinal, `${context}.ordinal`);
+  assertString(payload.assetId, `${context}.assetId`);
+  assertString(payload.uri, `${context}.uri`);
+}
+
 export function validateCanvasEvent(canvasEvent) {
   invariant(isPlainObject(canvasEvent), "canvas event must be an object");
   invariant(CANVAS_EVENT_TYPES.includes(canvasEvent.type), `unsupported canvas event type: ${canvasEvent.type}`);
@@ -174,6 +184,25 @@ export function validateClientEnvelope(message) {
         invariant([...QUEUE_NAMES, "all"].includes(message.payload.queue), "preview.cancel queue must be preview/refine/upscale/all");
       }
       break;
+    case "timeline.play":
+    case "timeline.pause":
+    case "timeline.loop.clear":
+    case "record.stop":
+      assertSessionId(message.payload.sessionId);
+      break;
+    case "timeline.seek":
+      assertSessionId(message.payload.sessionId);
+      assertString(message.payload.frameId, "timeline.seek.frameId");
+      break;
+    case "timeline.loop.set":
+      assertSessionId(message.payload.sessionId);
+      assertString(message.payload.startFrameId, "timeline.loop.set.startFrameId");
+      assertString(message.payload.endFrameId, "timeline.loop.set.endFrameId");
+      break;
+    case "record.start":
+      assertSessionId(message.payload.sessionId);
+      invariant(["output", "full-session"].includes(message.payload.source), "record.start source must be output or full-session");
+      break;
     default:
       break;
   }
@@ -209,8 +238,16 @@ export function validateServerEnvelope(message) {
       assertInteger(message.payload.sessionVersion, "preview.completed.sessionVersion");
       assertInteger(message.payload.totalVariants, "preview.completed.totalVariants");
       break;
+    case "timeline.frame":
+      assertFramePayload(message.payload, "timeline.frame");
+      break;
+    case "timeline.snapshot":
+      assertSessionId(message.payload.sessionId, "timeline.snapshot.sessionId");
+      invariant(Array.isArray(message.payload.frames), "timeline.snapshot.frames must be an array");
+      break;
     case "refine.completed":
     case "upscale.completed":
+    case "record.completed":
       assertString(message.payload.jobId, `${message.type}.jobId`);
       assertSessionId(message.payload.sessionId, `${message.type}.sessionId`);
       assertInteger(message.payload.sessionVersion, `${message.type}.sessionVersion`);

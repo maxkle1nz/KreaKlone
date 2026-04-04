@@ -41,6 +41,9 @@ export function applyCanvasEvent(state, canvasEvent) {
     references: [...state.references],
     strokes: [...state.strokes],
     selectedVariantId: undefined,
+    activeFrameId: state.activeFrameId,
+    timelineFrames: [...state.timelineFrames],
+    loopRange: state.loopRange,
     updatedAt: new Date().toISOString(),
     lastEventType: canvasEvent.type
   };
@@ -93,7 +96,33 @@ export function selectVariant(state, variantId) {
   return {
     ...state,
     selectedVariantId: variantId,
+    activeFrameId: variantId,
     version: state.version + 1,
+    updatedAt: new Date().toISOString()
+  };
+}
+
+export function appendTimelineFrame(state, frame) {
+  return {
+    ...state,
+    activeFrameId: frame.frameId,
+    timelineFrames: [...state.timelineFrames, frame].slice(-48),
+    updatedAt: new Date().toISOString()
+  };
+}
+
+export function setLoopRange(state, loopRange) {
+  return {
+    ...state,
+    loopRange,
+    updatedAt: new Date().toISOString()
+  };
+}
+
+export function clearLoopRange(state) {
+  return {
+    ...state,
+    loopRange: undefined,
     updatedAt: new Date().toISOString()
   };
 }
@@ -118,6 +147,14 @@ export function recordUpscaledAsset(state, assetId) {
   return {
     ...state,
     latestUpscaledAssetId: assetId,
+    updatedAt: new Date().toISOString()
+  };
+}
+
+export function recordCaptureAsset(state, assetId) {
+  return {
+    ...state,
+    latestRecordingAssetId: assetId,
     updatedAt: new Date().toISOString()
   };
 }

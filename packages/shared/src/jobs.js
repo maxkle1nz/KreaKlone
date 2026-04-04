@@ -51,6 +51,6 @@ export function createUpscaleJob(sessionState, sourceImageId, options = {}) {
     mode: options.mode ?? "high-detail",
     priority: 10,
     createdAt: new Date().toISOString(),
-    selectedVariantId: sessionState.selectedVariantId
+    selectedVariantId: sessionState.activeFrameId ?? sessionState.selectedVariantId
   };
 }

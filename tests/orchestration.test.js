@@ -29,6 +29,31 @@ test('newer edits cancel stale preview work', async () => {
   assert.ok(canceled.some((message) => message.payload.reason.includes('superseded')));
 });
 
+test('preview work appends timeline frames and recording returns an asset for the active frame', async () => {
+  const runtime = createMvpRuntime({ previewStepMs: 5, refineStepMs: 5, upscaleStepMs: 5 });
+  const { session } = runtime.createSession('session_87654321');
+  const delivered = [];
+
+  runtime.joinSession(session.sessionId, {
+    send(serialized) {
+      delivered.push(JSON.parse(serialized));
+    }
+  });
+
+  runtime.requestPreview(session.sessionId, { burstCount: 3 });
+  await wait(40);
+
+  const currentSession = runtime.getSession(session.sessionId);
+  assert.equal(currentSession.timelineFrames.length, 3);
+  assert.equal(typeof currentSession.activeFrameId, 'string');
+
+  const recordResult = runtime.requestRecord(session.sessionId, 'output');
+  assert.equal(typeof recordResult.assetId, 'string');
+
+  const recordingEvents = delivered.filter((message) => message.type === 'record.completed');
+  assert.equal(recordingEvents.length, 1);
+});
+
 test('runtime maps worker preview variants by ordinal and preserves worker metadata', async () => {
   const runtime = createMvpRuntime({
     workerClients: {

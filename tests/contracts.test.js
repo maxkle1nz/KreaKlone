@@ -25,6 +25,26 @@ test('contract validators accept valid envelopes', () => {
 
   assert.equal(clientMessage.type, 'canvas.event');
   assert.equal(serverMessage.type, 'preview.partial');
+
+  const timelineFrame = validateServerEnvelope(envelope('timeline.frame', {
+    jobId: 'preview_job',
+    sessionId: 'session_12345678',
+    sessionVersion: 2,
+    frameId: 'frame_1',
+    ordinal: 0,
+    assetId: 'asset_1',
+    uri: 'data:image/svg+xml,frame'
+  }));
+  assert.equal(timelineFrame.type, 'timeline.frame');
+
+  const recordEvent = validateClientEnvelope({
+    type: 'record.start',
+    payload: {
+      sessionId: 'session_12345678',
+      source: 'output'
+    }
+  });
+  assert.equal(recordEvent.type, 'record.start');
 });
 
 test('contract validators reject invalid queue selections', () => {

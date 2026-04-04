@@ -2,7 +2,7 @@ import { createBenchmarkCatalog } from '../../benchmark/src/scenarios.js';
 import { createQueues } from '../../queues/src/lanes.js';
 import { envelope, isQueueName, normalizeQueueSelection, parseJsonMessage, validateClientEnvelope, validateServerEnvelope } from '../../shared/src/contracts.js';
 import { createPreviewJob, createRefineJob, createUpscaleJob } from '../../shared/src/jobs.js';
-import { applyCanvasEvent, recordGeneratedSeeds, recordRefinedAsset, recordUpscaledAsset, selectVariant } from '../../shared/src/session-state.js';
+import { applyCanvasEvent, appendTimelineFrame, clearLoopRange, recordCaptureAsset, recordGeneratedSeeds, recordRefinedAsset, recordUpscaledAsset, selectVariant, setLoopRange } from '../../shared/src/session-state.js';
 import { InMemoryAssetStore } from './asset-store.js';
 import { InMemorySessionStore } from './session-store.js';
 import { WorkerClients } from './worker-clients.js';
@@ -156,6 +156,30 @@ export class MvpRuntime {
             break;
           case 'preview.cancel':
             this.cancelQueues(message.payload.sessionId, normalizeQueueSelection(message.payload.queue), 'client requested cancellation');
+            break;
+          case 'timeline.seek': {
+            const nextSession = selectVariant(this.ensureSession(message.payload.sessionId), message.payload.frameId);
+            this.sessions.save(nextSession);
+            this.#sendSessionState(nextSession.sessionId);
+            break;
+          }
+          case 'timeline.loop.set': {
+            const nextSession = setLoopRange(this.ensureSession(message.payload.sessionId), {
+              startFrameId: message.payload.startFrameId,
+              endFrameId: message.payload.endFrameId
+            });
+            this.sessions.save(nextSession);
+            this.#sendSessionState(nextSession.sessionId);
+            break;
+          }
+          case 'timeline.loop.clear': {
+            const nextSession = clearLoopRange(this.ensureSession(message.payload.sessionId));
+            this.sessions.save(nextSession);
+            this.#sendSessionState(nextSession.sessionId);
+            break;
+          }
+          case 'record.start':
+            this.requestRecord(message.payload.sessionId, message.payload.source);
             break;
           default:
             break;
@@ -323,6 +347,16 @@ export class MvpRuntime {
         uri: asset.uri
       });
       seeds.push(seed);
+      const currentSession = this.sessions.get(job.sessionId);
+      if (currentSession && currentSession.version === job.sessionVersion) {
+        this.sessions.save(appendTimelineFrame(currentSession, {
+          frameId: variantId,
+          createdAt: new Date().toISOString(),
+          assetId: asset.assetId,
+          ordinal,
+          seed
+        }));
+      }
 
       this.#broadcast(job.sessionId, envelope('preview.partial', {
         jobId: job.jobId,
@@ -334,6 +368,15 @@ export class MvpRuntime {
         assetId: asset.assetId,
         uri: asset.uri,
         roi: job.roi
+      }));
+      this.#broadcast(job.sessionId, envelope('timeline.frame', {
+        jobId: job.jobId,
+        sessionId: job.sessionId,
+        sessionVersion: job.sessionVersion,
+        frameId: variantId,
+        ordinal,
+        assetId: asset.assetId,
+        uri: asset.uri
       }));
     }
 
@@ -350,6 +393,10 @@ export class MvpRuntime {
       sessionVersion: job.sessionVersion,
       totalVariants: job.burstCount
     }));
+    this.#broadcast(job.sessionId, envelope('timeline.snapshot', {
+      sessionId: job.sessionId,
+      frames: session.timelineFrames
+    }));
     this.#sendSessionState(job.sessionId);
   }
 
@@ -359,7 +406,7 @@ export class MvpRuntime {
       await delay(this.refineStepMs, signal);
     }
     const session = this.sessions.get(job.sessionId);
-    if (!session || session.version !== job.sessionVersion || session.selectedVariantId !== job.sourceVariantId) {
+    if (!session || session.version !== job.sessionVersion || session.activeFrameId !== job.sourceVariantId) {
       this.metrics.staleDrops += 1;
       return;
     }
@@ -411,7 +458,7 @@ export class MvpRuntime {
       await delay(this.upscaleStepMs, signal);
     }
     const session = this.sessions.get(job.sessionId);
-    if (!session || session.version !== job.sessionVersion || session.selectedVariantId !== job.selectedVariantId) {
+    if (!session || session.version !== job.sessionVersion || session.activeFrameId !== job.selectedVariantId) {
       this.metrics.staleDrops += 1;
       return;
     }
@@ -496,6 +543,40 @@ export class MvpRuntime {
       error: message
     }));
     this.#sendSessionState(entry.job.sessionId);
+  }
+
+  requestRecord(sessionId, source = 'output') {
+    const session = this.ensureSession(sessionId);
+    const activeFrameId = session.activeFrameId ?? session.selectedVariantId;
+    const activeAssetId = activeFrameId ? this.variantIndex.get(activeFrameId)?.assetId : undefined;
+    if (!activeAssetId) {
+      throw new Error('no active frame selected for recording');
+    }
+
+    const asset = this.assets.createSyntheticAsset({
+      kind: 'recording',
+      title: source === 'full-session' ? 'Full session recording' : 'Output recording',
+      subtitle: `recorded from ${activeFrameId}`,
+      accent: '#f97316',
+      bodyLines: [
+        `session: ${sessionId}`,
+        `frame: ${activeFrameId}`,
+        `source: ${source}`
+      ],
+      metadata: { sessionId, frameId: activeFrameId, source }
+    });
+
+    this.sessions.save(recordCaptureAsset(session, asset.assetId));
+    this.#broadcast(sessionId, envelope('record.completed', {
+      jobId: `record_${sessionId}`,
+      sessionId,
+      sessionVersion: session.version,
+      assetId: asset.assetId,
+      uri: asset.uri,
+      sourceVariantId: activeFrameId
+    }));
+    this.#sendSessionState(sessionId);
+    return { assetId: asset.assetId };
   }
 
   #queueForName(queueName) {
