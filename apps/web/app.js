@@ -6,7 +6,7 @@ const state = {
   roi: undefined,
   dragStart: undefined,
   promptTimer: undefined,
-  variants: [],
+  frames: [],
   selectedVariantId: undefined,
   activeFrameId: undefined,
   selectedAssetId: undefined,
@@ -68,7 +68,7 @@ function drawStage() {
   context.fillText('KreaKlone scaffold canvas', 72, 110);
   context.font = '20px Inter, sans-serif';
   context.fillStyle = '#bfdbfe';
-  context.fillText('Drag a region, upload a reference, then stream preview variants.', 72, 146);
+  context.fillText('Drag a region, upload a reference, then stream timeline frames.', 72, 146);
 
   if (state.roi) {
     context.strokeStyle = '#38bdf8';
@@ -79,9 +79,22 @@ function drawStage() {
   }
 }
 
+function upsertFrame(frame) {
+  const existing = state.frames.find((entry) => entry.variantId === frame.variantId);
+  if (existing) {
+    Object.assign(existing, frame);
+    return;
+  }
+  state.frames.push({ ...frame, refined: frame.refined ?? false });
+}
+
+function replaceFrames(frames) {
+  state.frames = frames.map((frame) => ({ ...frame, refined: frame.refined ?? false }));
+}
+
 function renderVariants() {
   elements.variants.innerHTML = '';
-  for (const variant of state.variants) {
+  for (const variant of state.frames) {
     const card = document.createElement('button');
     card.type = 'button';
     card.className = `variant-card${variant.variantId === state.selectedVariantId ? ' selected' : ''}`;
@@ -101,14 +114,14 @@ function syncUi() {
   elements.generateButton.disabled = !state.connected;
   elements.cancelButton.disabled = !state.connected;
   elements.upscaleButton.disabled = !state.selectedAssetId;
-  elements.playButton.disabled = state.variants.length < 2;
+  elements.playButton.disabled = state.frames.length < 2;
   elements.pauseButton.disabled = !state.playbackTimer;
-  elements.loopButton.disabled = state.variants.length < 2;
+  elements.loopButton.disabled = state.frames.length < 2;
   elements.recordButton.disabled = !state.selectedAssetId;
   elements.sessionIdLabel.textContent = state.sessionId ?? '—';
   elements.sessionVersionLabel.textContent = String(state.sessionVersion);
   elements.roiLabel.textContent = state.roi ? `${state.roi.x},${state.roi.y} • ${state.roi.width}×${state.roi.height}` : 'full frame';
-  elements.burstLabel.textContent = `${elements.burstInput.value} variants`;
+  elements.burstLabel.textContent = `${elements.burstInput.value} frames`;
   renderVariants();
   drawStage();
 }
@@ -139,6 +152,16 @@ function applyServerState(payload) {
   state.sessionVersion = payload.version;
   state.roi = payload.session.activeRoi;
   state.activeFrameId = payload.session.activeFrameId ?? state.activeFrameId;
+  if (Array.isArray(payload.session.timelineFrames) && payload.session.timelineFrames.length > 0) {
+    replaceFrames(payload.session.timelineFrames.map((frame) => ({
+      variantId: frame.frameId,
+      ordinal: frame.ordinal ?? 0,
+      seed: frame.seed ?? 0,
+      assetId: frame.assetId,
+      uri: state.frames.find((entry) => entry.variantId === frame.frameId)?.uri ?? '',
+      refined: false
+    })));
+  }
   if (payload.session.latestUpscaledAssetId) {
     state.latestUpscaleAssetId = payload.session.latestUpscaledAssetId;
   }
@@ -179,10 +202,7 @@ async function connectSession() {
         log(`Preview stream started (${message.payload.burstCount} frames budget)`);
         break;
       case 'preview.partial': {
-        const existing = state.variants.find((variant) => variant.variantId === message.payload.variantId);
-        if (!existing) {
-          state.variants.push({ ...message.payload, refined: false });
-        }
+        upsertFrame({ ...message.payload, refined: false });
         state.activeFrameId = message.payload.variantId;
         state.selectedAssetId ??= message.payload.assetId;
         syncUi();
@@ -190,6 +210,23 @@ async function connectSession() {
       }
       case 'preview.completed':
         log(`Preview stream complete for job ${message.payload.jobId}`);
+        break;
+      case 'timeline.frame':
+        log(`Timeline frame ${message.payload.frameId} appended`);
+        break;
+      case 'timeline.snapshot':
+        if (Array.isArray(message.payload.frames)) {
+          replaceFrames(message.payload.frames.map((frame) => ({
+            variantId: frame.frameId,
+            ordinal: frame.ordinal ?? 0,
+            seed: frame.seed ?? 0,
+            assetId: frame.assetId,
+            uri: state.frames.find((entry) => entry.variantId === frame.frameId)?.uri ?? '',
+            refined: false
+          })));
+          syncUi();
+        }
+        log(`Timeline snapshot updated`);
         break;
       case 'refine.completed': {
         const variant = state.variants.find((entry) => entry.variantId === message.payload.sourceVariantId);
@@ -244,23 +281,32 @@ function stopPlayback() {
     window.clearInterval(state.playbackTimer);
     state.playbackTimer = undefined;
   }
+  if (state.sessionId) {
+    sendSocket('timeline.pause', { sessionId: state.sessionId });
+  }
   syncUi();
 }
 
 function startPlayback() {
   stopPlayback();
-  if (state.variants.length < 2) {
+  if (state.frames.length < 2) {
     return;
   }
+  if (state.sessionId) {
+    sendSocket('timeline.play', { sessionId: state.sessionId });
+  }
   state.playbackTimer = window.setInterval(() => {
-    state.playbackIndex = (state.playbackIndex + 1) % state.variants.length;
-    const frame = state.variants[state.playbackIndex];
+    state.playbackIndex = (state.playbackIndex + 1) % state.frames.length;
+    const frame = state.frames[state.playbackIndex];
     if (!frame) {
       return;
     }
     state.selectedVariantId = frame.variantId;
     state.activeFrameId = frame.variantId;
     state.selectedAssetId = frame.assetId;
+    if (state.sessionId) {
+      sendSocket('timeline.seek', { sessionId: state.sessionId, frameId: frame.variantId });
+    }
     syncUi();
   }, 250);
   log('Timeline playback started');
@@ -269,14 +315,26 @@ function startPlayback() {
 
 function toggleLoop() {
   state.loopEnabled = !state.loopEnabled;
+  if (state.sessionId) {
+    if (state.loopEnabled && state.frames.length >= 2) {
+      sendSocket('timeline.loop.set', {
+        sessionId: state.sessionId,
+        startFrameId: state.frames[0].variantId,
+        endFrameId: state.frames[state.frames.length - 1].variantId
+      });
+    } else {
+      sendSocket('timeline.loop.clear', { sessionId: state.sessionId });
+    }
+  }
   log(state.loopEnabled ? 'Loop enabled' : 'Loop disabled');
   syncUi();
 }
 
 function recordOutput() {
-  if (!state.selectedAssetId) {
+  if (!state.selectedAssetId || !state.sessionId) {
     return;
   }
+  sendSocket('record.start', { sessionId: state.sessionId, source: 'output' });
   log(`Recording requested from frame ${state.activeFrameId ?? state.selectedVariantId ?? 'current'}`);
 }
 
@@ -389,7 +447,7 @@ elements.connectButton.addEventListener('click', () => {
 });
 
 elements.generateButton.addEventListener('click', () => {
-  state.variants = [];
+  state.frames = [];
   sendSocket('preview.request', {
     sessionId: state.sessionId,
     burstCount: Number(elements.burstInput.value)
