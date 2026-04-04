@@ -101,9 +101,37 @@ export function createAppServer(options = {}) {
         return;
       }
 
+      if (request.method === 'POST' && request.url === '/api/timeline/delete-frame') {
+        const body = await readJsonBody(request);
+        const session = getRuntime().deleteFrame(body.sessionId, body.frameId);
+        json(response, 200, { session });
+        return;
+      }
+
+      if (request.method === 'POST' && request.url === '/api/timeline/pin-frame') {
+        const body = await readJsonBody(request);
+        const session = getRuntime().pinFrame(body.sessionId, body.frameId);
+        json(response, 200, { session });
+        return;
+      }
+
+      if (request.method === 'POST' && request.url === '/api/sessions/settings') {
+        const body = await readJsonBody(request);
+        const session = getRuntime().updateSessionSettings(body.sessionId, { frameCapacity: body.frameCapacity });
+        json(response, 200, { session });
+        return;
+      }
+
       if (request.method === 'POST' && request.url === '/api/upscale') {
         const body = await readJsonBody(request);
         const result = getRuntime().requestUpscale(body.sessionId, body.assetId);
+        json(response, 202, result);
+        return;
+      }
+
+      if (request.method === 'POST' && request.url === '/api/record/start') {
+        const body = await readJsonBody(request);
+        const result = getRuntime().requestRecord(body.sessionId, body.source ?? 'output');
         json(response, 202, result);
         return;
       }

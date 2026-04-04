@@ -274,3 +274,74 @@ test('worker failures become explicit job.failed events instead of being swallow
     await workerStack.stop();
   }
 });
+
+test('timeline management and session settings endpoints mutate session state', async () => {
+  const workerStack = await startWorkerStack();
+  const appStack = await startAppWithWorkers(workerStack);
+
+  try {
+    const sessionResponse = await fetch(`${appStack.baseUrl}/api/sessions`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({})
+    });
+    const sessionPayload = await sessionResponse.json();
+    const sessionId = sessionPayload.session.sessionId;
+
+    const socket = new WebSocket(appStack.baseUrl.replace('http', 'ws') + '/ws');
+    await new Promise((resolve, reject) => {
+      socket.addEventListener('open', resolve, { once: true });
+      socket.addEventListener('error', reject, { once: true });
+    });
+    socket.send(JSON.stringify({ type: 'session.join', payload: { sessionId } }));
+    await waitFor(socket, 'session.state', (payload) => payload.sessionId === sessionId);
+
+    socket.send(JSON.stringify({ type: 'preview.request', payload: { sessionId, burstCount: 3 } }));
+    await waitFor(socket, 'preview.completed', (payload) => payload.sessionId === sessionId);
+
+    const stateBefore = appStack.app.runtime.getSession(sessionId);
+    const frameId = stateBefore.timelineFrames[0].frameId;
+
+    const capacityResponse = await fetch(`${appStack.baseUrl}/api/sessions/settings`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ sessionId, frameCapacity: 12 })
+    });
+    const capacityPayload = await capacityResponse.json();
+    assert.equal(capacityResponse.status, 200);
+    assert.equal(capacityPayload.session.frameCapacity, 12);
+
+    const pinResponse = await fetch(`${appStack.baseUrl}/api/timeline/pin-frame`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ sessionId, frameId })
+    });
+    const pinPayload = await pinResponse.json();
+    assert.equal(pinResponse.status, 200);
+    assert.equal(pinPayload.session.timelineFrames.some((frame) => frame.frameId === frameId && frame.isPinned === true), true);
+
+    const deleteResponse = await fetch(`${appStack.baseUrl}/api/timeline/delete-frame`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ sessionId, frameId })
+    });
+    const deletePayload = await deleteResponse.json();
+    assert.equal(deleteResponse.status, 200);
+    assert.equal(deletePayload.session.timelineFrames.some((frame) => frame.frameId === frameId), false);
+
+    const recordResponse = await fetch(`${appStack.baseUrl}/api/record/start`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ sessionId, source: 'output' })
+    });
+    assert.equal(recordResponse.status, 202);
+
+    await new Promise((resolve) => {
+      socket.addEventListener('close', resolve, { once: true });
+      socket.close();
+    });
+  } finally {
+    await appStack.stop();
+    await workerStack.stop();
+  }
+});

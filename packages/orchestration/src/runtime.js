@@ -281,6 +281,33 @@ export class MvpRuntime {
     return { queueEntryId, job };
   }
 
+  pinFrame(sessionId, frameId) {
+    const session = this.ensureSession(sessionId);
+    const nextSession = pinTimelineFrame(session, frameId);
+    this.sessions.save(nextSession);
+    this.#sendSessionState(sessionId);
+    return nextSession;
+  }
+
+  deleteFrame(sessionId, frameId) {
+    const session = this.ensureSession(sessionId);
+    const nextSession = deleteTimelineFrame(session, frameId);
+    this.sessions.save(nextSession);
+    this.#sendSessionState(sessionId);
+    return nextSession;
+  }
+
+  updateSessionSettings(sessionId, settings = {}) {
+    const session = this.ensureSession(sessionId);
+    let nextSession = session;
+    if (settings.frameCapacity !== undefined) {
+      nextSession = setFrameCapacity(nextSession, settings.frameCapacity);
+    }
+    this.sessions.save(nextSession);
+    this.#sendSessionState(sessionId);
+    return nextSession;
+  }
+
   cancelQueues(sessionId, selection = 'all', reason = 'canceled') {
     return this.#cancelWithPredicate(queueSelectionToList(selection), (entry) => entry.job.sessionId === sessionId, reason);
   }
