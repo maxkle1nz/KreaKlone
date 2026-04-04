@@ -55,6 +55,20 @@ test('preview work appends timeline frames and recording returns an asset for th
   assert.equal(recordingEvents.length, 1);
 });
 
+test('preview request propagates audioPositionMs into timeline frames', async () => {
+  const runtime = createMvpRuntime({ previewStepMs: 5, refineStepMs: 5, upscaleStepMs: 5 });
+  const { session } = runtime.createSession('session_audio_timeline');
+  runtime.joinSession(session.sessionId, { send() {} });
+
+  runtime.requestPreview(session.sessionId, { burstCount: 2, audioPositionMs: 4200 });
+  await runtime.queues.previewQueue.waitForIdle();
+
+  const currentSession = runtime.getSession(session.sessionId);
+  assert.equal(currentSession.timelineFrames.length, 2);
+  assert.equal(currentSession.timelineFrames[0].audioPositionMs, 4200);
+  assert.equal(currentSession.timelineFrames[1].audioPositionMs, 4200);
+});
+
 test('timeline capacity trims old unpinned frames while preserving pinned frames', async () => {
   const runtime = createMvpRuntime({ previewStepMs: 1, refineStepMs: 1, upscaleStepMs: 1 });
   const { session } = runtime.createSession('session_capacity');

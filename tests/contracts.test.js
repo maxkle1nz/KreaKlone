@@ -33,7 +33,8 @@ test('contract validators accept valid envelopes', () => {
     frameId: 'frame_1',
     ordinal: 0,
     assetId: 'asset_1',
-    uri: 'data:image/svg+xml,frame'
+    uri: 'data:image/svg+xml,frame',
+    audioPositionMs: 1250
   }));
   assert.equal(timelineFrame.type, 'timeline.frame');
 

@@ -152,7 +152,10 @@ export class MvpRuntime {
             this.applyCanvasEvent(message.payload.sessionId, message.payload.event);
             break;
           case 'preview.request':
-            this.requestPreview(message.payload.sessionId, { burstCount: message.payload.burstCount });
+            this.requestPreview(message.payload.sessionId, {
+              burstCount: message.payload.burstCount,
+              audioPositionMs: message.payload.audioPositionMs ?? null
+            });
             break;
           case 'preview.cancel':
             this.cancelQueues(message.payload.sessionId, normalizeQueueSelection(message.payload.queue), 'client requested cancellation');
@@ -399,7 +402,8 @@ export class MvpRuntime {
           createdAt: new Date().toISOString(),
           assetId: asset.assetId,
           ordinal,
-          seed
+          seed,
+          audioPositionMs: job.audioPositionMs ?? null
         }));
       }
 
@@ -421,7 +425,8 @@ export class MvpRuntime {
         frameId: variantId,
         ordinal,
         assetId: asset.assetId,
-        uri: asset.uri
+        uri: asset.uri,
+        audioPositionMs: job.audioPositionMs ?? null
       }));
     }
 

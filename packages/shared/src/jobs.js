@@ -17,6 +17,7 @@ export function createPreviewJob(sessionState, options = {}) {
     prompt: sessionState.prompt,
     references: sessionState.references,
     burstCount: clampBurstCount(options.burstCount, 4),
+    audioPositionMs: options.audioPositionMs ?? null,
     seedMode: options.seedMode ?? "increment",
     previewModel: options.previewModel ?? "sdxl-turbo",
     priority: 100,

@@ -115,6 +115,9 @@ function assertFramePayload(payload, context) {
   assertInteger(payload.ordinal, `${context}.ordinal`);
   assertString(payload.assetId, `${context}.assetId`);
   assertString(payload.uri, `${context}.uri`);
+  if (payload.audioPositionMs !== undefined && payload.audioPositionMs !== null) {
+    invariant(Number.isFinite(payload.audioPositionMs), `${context}.audioPositionMs must be numeric when present`);
+  }
 }
 
 export function validateCanvasEvent(canvasEvent) {
@@ -179,6 +182,9 @@ export function validateClientEnvelope(message) {
       assertSessionId(message.payload.sessionId);
       if (message.payload.burstCount !== undefined) {
         assertInteger(message.payload.burstCount, "preview.request.burstCount");
+      }
+      if (message.payload.audioPositionMs !== undefined && message.payload.audioPositionMs !== null) {
+        invariant(Number.isFinite(message.payload.audioPositionMs), "preview.request.audioPositionMs must be numeric when present");
       }
       break;
     case "preview.cancel":
