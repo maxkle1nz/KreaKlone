@@ -27,6 +27,32 @@ function waitFor(socket, type, predicate = () => true, timeoutMs = 2000) {
   });
 }
 
+function collectMessages(socket, predicate, expectedCount, timeoutMs = 2000) {
+  return new Promise((resolve, reject) => {
+    const matches = [];
+    const timer = setTimeout(() => {
+      socket.removeEventListener('message', onMessage);
+      reject(new Error(`Timed out waiting for ${expectedCount} matching messages`));
+    }, timeoutMs);
+
+    function onMessage(event) {
+      const message = JSON.parse(event.data);
+      if (!predicate(message, matches)) {
+        return;
+      }
+
+      matches.push(message);
+      if (matches.length === expectedCount) {
+        clearTimeout(timer);
+        socket.removeEventListener('message', onMessage);
+        resolve(matches);
+      }
+    }
+
+    socket.addEventListener('message', onMessage);
+  });
+}
+
 async function startWorkerStack({ previewProvider } = {}) {
   const previewService = createWorkerService(previewWorkerManifest, { port: 0, previewProvider });
   const refineService = createWorkerService(refineWorkerManifest, { port: 0 });
@@ -95,22 +121,23 @@ test('http + websocket scaffold supports session join and progressive previews',
       socket.addEventListener('open', resolve, { once: true });
       socket.addEventListener('error', reject, { once: true });
     });
-    const received = [];
-    socket.addEventListener('message', (event) => {
-      received.push(JSON.parse(event.data));
-    });
 
     socket.send(JSON.stringify({ type: 'session.join', payload: { sessionId: sessionPayload.session.sessionId } }));
     await waitFor(socket, 'session.state', (payload) => payload.sessionId === sessionPayload.session.sessionId);
 
     const startedPromise = waitFor(socket, 'preview.started');
+    const partialsPromise = collectMessages(
+      socket,
+      (message, matches) => message.type === 'preview.partial' && !matches.some((entry) => entry.payload.variantId === message.payload.variantId),
+      4
+    );
     const completedPromise = waitFor(socket, 'preview.completed');
 
     socket.send(JSON.stringify({ type: 'preview.request', payload: { sessionId: sessionPayload.session.sessionId, burstCount: 4 } }));
 
     await startedPromise;
     const completed = await completedPromise;
-    const partials = received.filter((message) => message.type === 'preview.partial');
+    const partials = await partialsPromise;
 
     assert.equal(partials.length, 4);
     assert.equal(completed.payload.totalVariants, 4);

@@ -6,7 +6,14 @@ export const CLIENT_EVENT_TYPES = Object.freeze([
   "session.join",
   "canvas.event",
   "preview.request",
-  "preview.cancel"
+  "preview.cancel",
+  "timeline.play",
+  "timeline.pause",
+  "timeline.seek",
+  "timeline.loop.set",
+  "timeline.loop.clear",
+  "record.start",
+  "record.stop"
 ]);
 
 export const SERVER_EVENT_TYPES = Object.freeze([
@@ -14,8 +21,11 @@ export const SERVER_EVENT_TYPES = Object.freeze([
   "preview.started",
   "preview.partial",
   "preview.completed",
+  "timeline.frame",
+  "timeline.snapshot",
   "refine.completed",
   "upscale.completed",
+  "record.completed",
   "job.canceled",
   "job.failed"
 ]);

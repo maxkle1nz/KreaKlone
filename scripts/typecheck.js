@@ -15,8 +15,22 @@ const queues = createQueues({
 });
 
 assert.equal(QUEUE_NAMES.length, 3);
-assert.deepEqual(CLIENT_EVENT_TYPES, ['session.join', 'canvas.event', 'preview.request', 'preview.cancel']);
+assert.deepEqual(CLIENT_EVENT_TYPES, [
+  'session.join',
+  'canvas.event',
+  'preview.request',
+  'preview.cancel',
+  'timeline.play',
+  'timeline.pause',
+  'timeline.seek',
+  'timeline.loop.set',
+  'timeline.loop.clear',
+  'record.start',
+  'record.stop'
+]);
 assert.equal(SERVER_EVENT_TYPES[0], 'session.state');
+assert.equal(SERVER_EVENT_TYPES.includes('timeline.frame'), true);
+assert.equal(SERVER_EVENT_TYPES.includes('record.completed'), true);
 assert.equal(catalog.scenarios.length, 6);
 assert.equal(catalog.runbook.length, 6);
 assert.equal(deployment.requiredDirectories.includes('preview-worker'), true);

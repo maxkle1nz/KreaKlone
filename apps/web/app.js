@@ -8,8 +8,13 @@ const state = {
   promptTimer: undefined,
   variants: [],
   selectedVariantId: undefined,
+  activeFrameId: undefined,
   selectedAssetId: undefined,
-  latestUpscaleAssetId: undefined
+  latestUpscaleAssetId: undefined,
+  latestRecordingAssetId: undefined,
+  playbackTimer: undefined,
+  playbackIndex: 0,
+  loopEnabled: false
 };
 
 const elements = {
@@ -18,6 +23,10 @@ const elements = {
   generateButton: document.getElementById('generateButton'),
   cancelButton: document.getElementById('cancelButton'),
   upscaleButton: document.getElementById('upscaleButton'),
+  playButton: document.getElementById('playButton'),
+  pauseButton: document.getElementById('pauseButton'),
+  loopButton: document.getElementById('loopButton'),
+  recordButton: document.getElementById('recordButton'),
   promptInput: document.getElementById('promptInput'),
   negativePromptInput: document.getElementById('negativePromptInput'),
   burstInput: document.getElementById('burstInput'),
@@ -79,8 +88,8 @@ function renderVariants() {
     card.innerHTML = `
       <img src="${variant.uri}" alt="${variant.variantId}" />
       <strong>${variant.variantId}</strong>
-      <span>Seed ${variant.seed} • Ordinal ${variant.ordinal + 1}</span>
-      <span>${variant.refined ? 'Refined' : 'Preview only'}</span>
+      <span>Seed ${variant.seed} • Frame ${variant.ordinal + 1}</span>
+      <span>${variant.refined ? 'Refined frame' : 'Live frame'}</span>
     `;
     card.addEventListener('click', () => selectVariant(variant));
     elements.variants.append(card);
@@ -92,6 +101,10 @@ function syncUi() {
   elements.generateButton.disabled = !state.connected;
   elements.cancelButton.disabled = !state.connected;
   elements.upscaleButton.disabled = !state.selectedAssetId;
+  elements.playButton.disabled = state.variants.length < 2;
+  elements.pauseButton.disabled = !state.playbackTimer;
+  elements.loopButton.disabled = state.variants.length < 2;
+  elements.recordButton.disabled = !state.selectedAssetId;
   elements.sessionIdLabel.textContent = state.sessionId ?? '—';
   elements.sessionVersionLabel.textContent = String(state.sessionVersion);
   elements.roiLabel.textContent = state.roi ? `${state.roi.x},${state.roi.y} • ${state.roi.width}×${state.roi.height}` : 'full frame';
@@ -125,8 +138,12 @@ function sendSocket(type, payload) {
 function applyServerState(payload) {
   state.sessionVersion = payload.version;
   state.roi = payload.session.activeRoi;
+  state.activeFrameId = payload.session.activeFrameId ?? state.activeFrameId;
   if (payload.session.latestUpscaledAssetId) {
     state.latestUpscaleAssetId = payload.session.latestUpscaledAssetId;
+  }
+  if (payload.session.latestRecordingAssetId) {
+    state.latestRecordingAssetId = payload.session.latestRecordingAssetId;
   }
   syncUi();
 }
@@ -159,19 +176,20 @@ async function connectSession() {
         applyServerState(message.payload);
         break;
       case 'preview.started':
-        log(`Preview started (${message.payload.burstCount} variants)`);
+        log(`Preview stream started (${message.payload.burstCount} frames budget)`);
         break;
       case 'preview.partial': {
         const existing = state.variants.find((variant) => variant.variantId === message.payload.variantId);
         if (!existing) {
           state.variants.push({ ...message.payload, refined: false });
         }
+        state.activeFrameId = message.payload.variantId;
         state.selectedAssetId ??= message.payload.assetId;
         syncUi();
         break;
       }
       case 'preview.completed':
-        log(`Preview complete for job ${message.payload.jobId}`);
+        log(`Preview stream complete for job ${message.payload.jobId}`);
         break;
       case 'refine.completed': {
         const variant = state.variants.find((entry) => entry.variantId === message.payload.sourceVariantId);
@@ -191,6 +209,11 @@ async function connectSession() {
         log(`Upscale completed: ${message.payload.assetId}`);
         syncUi();
         break;
+      case 'record.completed':
+        state.latestRecordingAssetId = message.payload.assetId;
+        log(`Recording completed: ${message.payload.assetId}`);
+        syncUi();
+        break;
       case 'job.canceled':
         log(`Canceled ${message.payload.jobId}: ${message.payload.reason}`);
         break;
@@ -205,6 +228,7 @@ async function connectSession() {
 
 function selectVariant(variant) {
   state.selectedVariantId = variant.variantId;
+  state.activeFrameId = variant.variantId;
   state.selectedAssetId = variant.assetId;
   syncUi();
   jsonFetch('/api/refine', {
@@ -213,6 +237,47 @@ function selectVariant(variant) {
   }).then(() => {
     log(`Queued refine for ${variant.variantId}`);
   }).catch((error) => log(error.message));
+}
+
+function stopPlayback() {
+  if (state.playbackTimer) {
+    window.clearInterval(state.playbackTimer);
+    state.playbackTimer = undefined;
+  }
+  syncUi();
+}
+
+function startPlayback() {
+  stopPlayback();
+  if (state.variants.length < 2) {
+    return;
+  }
+  state.playbackTimer = window.setInterval(() => {
+    state.playbackIndex = (state.playbackIndex + 1) % state.variants.length;
+    const frame = state.variants[state.playbackIndex];
+    if (!frame) {
+      return;
+    }
+    state.selectedVariantId = frame.variantId;
+    state.activeFrameId = frame.variantId;
+    state.selectedAssetId = frame.assetId;
+    syncUi();
+  }, 250);
+  log('Timeline playback started');
+  syncUi();
+}
+
+function toggleLoop() {
+  state.loopEnabled = !state.loopEnabled;
+  log(state.loopEnabled ? 'Loop enabled' : 'Loop disabled');
+  syncUi();
+}
+
+function recordOutput() {
+  if (!state.selectedAssetId) {
+    return;
+  }
+  log(`Recording requested from frame ${state.activeFrameId ?? state.selectedVariantId ?? 'current'}`);
 }
 
 function debouncePromptSend() {
@@ -335,6 +400,10 @@ elements.generateButton.addEventListener('click', () => {
 elements.cancelButton.addEventListener('click', () => {
   sendSocket('preview.cancel', { sessionId: state.sessionId, queue: 'all' });
 });
+elements.playButton.addEventListener('click', startPlayback);
+elements.pauseButton.addEventListener('click', stopPlayback);
+elements.loopButton.addEventListener('click', toggleLoop);
+elements.recordButton.addEventListener('click', recordOutput);
 
 elements.upscaleButton.addEventListener('click', () => {
   if (!state.selectedAssetId) {

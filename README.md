@@ -18,4 +18,5 @@ This workspace contains the technical research and implementation blueprint for 
 - `RTX 4090` is the best practical speed/cost winner for the preview lane
 - `L4` is the strongest balanced production fallback
 - `T4` is only a low-cost PoC option
-- The product should be built around `preview-fast + ROI-only + refine-later + upscale-last`
+- The product should be built around `left-canvas control + right-side live frame timeline + refine-later + upscale-last`
+- Timeline is a first-class feature: scrub, play, set loop ranges, and record either output-only or the full session

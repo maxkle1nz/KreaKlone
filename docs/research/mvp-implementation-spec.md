@@ -12,9 +12,11 @@ The MVP is not trying to beat mature creative suites. It is trying to prove:
 
 - `interactive preview`
 - `ROI-only editing`
-- `burst candidate generation`
+- `live frame-stream generation on the same composition`
+- `timeline playback / scrubbing / loop ranges`
 - `selection-based refine`
 - `async upscale`
+- `record output or full-session playback`
 
 ## Success Criteria
 
@@ -22,8 +24,10 @@ The MVP is successful if:
 
 - first preview candidate appears in under `1 second` on the target GPU
 - users can edit an existing image with prompt + mask + references
-- users can generate `4` preview variants per interaction
-- selected variants can be refined and upscaled without blocking new edits
+- users can watch a continuous stream of frames for the same scene while they draw
+- users can scrub recent frames, play them back, and loop a selected range
+- users can refine and upscale the current frame without blocking new edits
+- users can record the output stream or the full screen session
 - stale jobs are canceled correctly when the user keeps editing
 
 ## Out Of Scope For MVP
@@ -43,6 +47,8 @@ The MVP is successful if:
 - HTML5 canvas or WebGL-backed canvas
 - `WebSocket` for the interactive channel
 - local ROI extraction before upload when possible
+- split layout: left control canvas, right generated timeline/output panel
+- playback controls: play, pause, scrub, loop-in, loop-out, record
 
 ### Backend
 
@@ -63,16 +69,18 @@ The MVP is successful if:
 - object storage for uploaded references, generated images, and selected outputs
 - Redis or equivalent transient state store for active sessions
 - Postgres only if persistent project/session history is needed in MVP v1.1
+- rolling frame timeline buffer per session
+- clip/export artifacts for recordings
 
 ## Core User Flows
 
-### Flow 1: Prompt-only burst generation
+### Flow 1: Prompt-driven live frame stream
 
 1. User enters prompt.
-2. User clicks generate.
-3. Backend creates a preview burst job with `4` seeds.
-4. UI shows the first candidate as soon as it arrives.
-5. Remaining candidates fill in progressively.
+2. User clicks generate or starts drawing.
+3. Backend creates a preview stream job for the current composition.
+4. UI shows the first frame as soon as it arrives.
+5. Additional frames keep landing in the right-hand timeline while the same scene evolves.
 
 ### Flow 2: Edit existing image with mask
 
@@ -81,21 +89,35 @@ The MVP is successful if:
 3. User updates prompt.
 4. Backend computes `ROI`.
 5. Backend sends only ROI context into preview lane.
-6. UI composites the burst results back into the image.
+6. UI updates the generated timeline while keeping the left canvas as the control surface.
 
-### Flow 3: Commit selected variant
+### Flow 3: Timeline playback and looping
 
-1. User selects one burst candidate.
+1. User scrubs recent generated frames.
+2. User presses play to review the stream.
+3. User marks loop-in and loop-out frames.
+4. The chosen range loops until paused.
+
+### Flow 4: Commit current frame
+
+1. User selects the current or a past frame from the timeline.
 2. Backend submits `RefineJob`.
 3. UI shows a processing state but remains editable.
-4. Refined result returns and can replace the temporary preview.
+4. Refined result returns and can replace the current preview checkpoint.
 
-### Flow 4: Upscale selected result
+### Flow 5: Upscale selected result
 
 1. User clicks upscale.
 2. Backend submits `UpscaleJob`.
 3. Upscale runs asynchronously.
 4. Final asset is stored and returned.
+
+### Flow 6: Record output
+
+1. User clicks record.
+2. User chooses `output-only` or `full-session`.
+3. Backend captures the requested frame range or live session.
+4. Recording is exported without blocking the preview loop.
 
 ## System Components
 
@@ -108,6 +130,16 @@ Responsibilities:
 - compute changed rectangle when practical
 - maintain optimistic UI state
 - stream events over WebSocket
+- expose drawing, text, image import, selection, and masking tools
+
+### 1.5 Timeline Client
+
+Responsibilities:
+
+- keep a rolling list of recent generated frames
+- render frame thumbnails or cards in order
+- support play, pause, scrubbing, and loop range controls
+- expose pin, refine, upscale, and record actions for frames
 
 ### 2. Session Service
 
@@ -117,6 +149,7 @@ Responsibilities:
 - merge incoming `CanvasEvent`s
 - compute current session version
 - reject stale inference results
+- track active frame, pinned frames, and loop selections
 
 ### 3. ROI Extractor
 
@@ -135,9 +168,9 @@ Rules:
 
 Responsibilities:
 
-- prioritize user-visible burst generation
+- prioritize user-visible frame generation
 - cancel stale jobs aggressively
-- stream partial results back as they arrive
+- stream sequential frames back as they arrive
 
 ### 5. Refine Queue
 
@@ -155,6 +188,14 @@ Responsibilities:
 - never block preview
 - write durable final asset
 
+### 7. Record Queue
+
+Responsibilities:
+
+- export output-only or full-session recordings
+- never block preview
+- capture frame ranges or live sessions asynchronously
+
 ## API Surface
 
 ### REST
@@ -164,6 +205,8 @@ POST /api/sessions
 POST /api/assets/upload
 POST /api/refine
 POST /api/upscale
+POST /api/record/start
+POST /api/record/stop
 GET  /api/assets/:id
 ```
 
@@ -175,6 +218,13 @@ Events sent by client:
 - `canvas.event`
 - `preview.request`
 - `preview.cancel`
+- `timeline.play`
+- `timeline.pause`
+- `timeline.seek`
+- `timeline.loop.set`
+- `timeline.loop.clear`
+- `record.start`
+- `record.stop`
 
 Events sent by server:
 
@@ -182,8 +232,11 @@ Events sent by server:
 - `preview.started`
 - `preview.partial`
 - `preview.completed`
+- `timeline.frame`
+- `timeline.snapshot`
 - `refine.completed`
 - `upscale.completed`
+- `record.completed`
 - `job.canceled`
 - `job.failed`
 
@@ -192,6 +245,7 @@ Events sent by server:
 - `preview` priority: highest
 - `refine` priority: medium
 - `upscale` priority: low
+- `record` priority: low
 
 Cancellation policy:
 
@@ -235,16 +289,18 @@ Recommended split:
 
 ### Functional
 
-- prompt-only generation returns `4` candidates
+- prompt-only generation yields a live frame stream for the same scene
 - reference image is preserved and affects the result
 - masking changes only the intended ROI
-- selected variant can be refined
-- selected variant can be upscaled
+- timeline stores recent frames in order
+- playback and loop ranges work on stored frames
+- current frame can be refined and upscaled
+- output-only and full-session recording flows can be triggered
 
 ### Latency
 
 - first preview under `1 s`
-- full `4` candidate burst under `1.5 s`
+- continuous frame stream remains responsive while editing
 - refine under `5 s`
 
 ### Correctness
@@ -257,11 +313,13 @@ Recommended split:
 
 ### Phase 1
 
-- prompt-only burst
+- prompt-only live frame stream
 - image upload
 - mask editing
 - SDXL-Turbo preview lane
 - Qwen-Image-Edit refine lane
+- timeline rail with play/pause/scrub/loop
+- record controls with stubbed output
 
 ### Phase 2
 

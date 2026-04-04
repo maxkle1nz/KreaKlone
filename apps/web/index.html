@@ -16,7 +16,7 @@
           </div>
           <div class="actions">
             <button id="connectButton">Connect session</button>
-            <button id="generateButton" disabled>Generate burst</button>
+            <button id="generateButton" disabled>Start stream</button>
             <button id="cancelButton" disabled>Cancel jobs</button>
           </div>
         </div>
@@ -59,7 +59,13 @@
         </section>
 
         <section class="status-card">
-          <h2>Preview burst</h2>
+          <h2>Timeline</h2>
+          <div class="timeline-toolbar">
+            <button id="playButton" disabled>Play</button>
+            <button id="pauseButton" disabled>Pause</button>
+            <button id="loopButton" disabled>Loop</button>
+            <button id="recordButton" disabled>Record</button>
+          </div>
           <div id="variants" class="variants"></div>
         </section>
 

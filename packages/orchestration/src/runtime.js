@@ -271,18 +271,16 @@ export class MvpRuntime {
 
     const remotePayload = await this.workerClients.requestPreview(job, { signal });
     const remoteVariants = createPreviewVariantMap(remotePayload);
-    const useRemoteVariants = remoteVariants.size > 0;
     const seeds = [];
     for (let ordinal = 0; ordinal < job.burstCount; ordinal += 1) {
-      if (!useRemoteVariants) {
-        await delay(this.previewStepMs, signal);
-      }
+      const remoteVariant = remoteVariants.get(ordinal);
+      const perVariantStepMs = remoteVariant ? Math.min(this.previewStepMs, 10) : this.previewStepMs;
+      await delay(perVariantStepMs, signal);
       if (!this.#isCurrentSessionVersion(job.sessionId, job.sessionVersion)) {
         this.metrics.staleDrops += 1;
         return;
       }
 
-      const remoteVariant = remoteVariants.get(ordinal);
       const seed = remoteVariant?.seed ?? job.sessionVersion * 100 + ordinal + 1;
       const variantId = remoteVariant?.variantId ?? `${job.jobId}_v${ordinal + 1}`;
       const asset = remoteVariant

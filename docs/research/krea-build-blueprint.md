@@ -8,9 +8,11 @@ Build a browser-based AI image editing product that feels real-time by combining
 - reference-image conditioning
 - mask and brush editing
 - region-of-interest regeneration
-- burst preview
+- frame-stream preview on the same composition
+- timeline playback and loop ranges
 - async refine
 - async upscale
+- record output or full-session playback
 
 The first product milestone is not "best final image quality." It is:
 
@@ -20,18 +22,22 @@ The first product milestone is not "best final image quality." It is:
 
 ```mermaid
 flowchart LR
-    UI["Browser Canvas UI"] --> API["Session / Orchestration API"]
+    UI["Left Canvas UI"] --> API["Session / Orchestration API"]
+    API --> TIMELINE["Timeline / Output Rail"]
     API --> ROI["ROI Extractor"]
     API --> STATE["Session State Store"]
     ROI --> PREVIEW["Preview Queue"]
     ROI --> REFINE["Refine Queue"]
     ROI --> UPSCALE["Upscale Queue"]
+    TIMELINE --> RECORD["Record Queue"]
     PREVIEW --> PREVIEW_SVC["Preview Inference Service"]
     REFINE --> REFINE_SVC["Refine Inference Service"]
     UPSCALE --> UPSCALE_SVC["Upscale Service"]
+    RECORD --> RECORD_SVC["Recording Service"]
     PREVIEW_SVC --> STATE
     REFINE_SVC --> STATE
     UPSCALE_SVC --> STATE
+    RECORD_SVC --> STATE
     STATE --> API
     API --> UI
 ```
@@ -43,10 +49,11 @@ flowchart LR
 3. Backend merges the event into `SessionState`.
 4. Backend computes a `ROI`.
 5. Backend submits a `PreviewJob`.
-6. Preview service generates `4-8` low-step variants for the ROI.
-7. UI composites the burst results into the working frame.
-8. After idle or explicit commit, backend submits a `RefineJob`.
-9. After variant selection, backend submits an `UpscaleJob`.
+6. Preview service generates sequential low-step frames for the same composition.
+7. UI appends those frames to the right-hand timeline while the left panel stays editable.
+8. User can scrub, play, and loop a range of recent frames.
+9. After idle or explicit commit, backend submits a `RefineJob`.
+10. After frame selection, backend submits an `UpscaleJob` or `RecordJob`.
 
 ## Public Interfaces
 
@@ -72,8 +79,9 @@ type PreviewJob = {
   roi: { x: number; y: number; width: number; height: number };
   prompt: { positive: string; negative?: string };
   references: string[];
-  burstCount: number;
-  seedMode: "increment" | "random";
+  frameBudget: number;
+  streamMode: "continuous" | "burst";
+  frameStride: number;
   previewModel: "sdxl-turbo" | "flux-schnell";
 };
 ```
@@ -113,7 +121,22 @@ type SessionState = {
   references: string[];
   activeRoi?: { x: number; y: number; width: number; height: number };
   seedHistory: number[];
-  selectedVariantId?: string;
+  activeFrameId?: string;
+  pinnedFrameIds?: string[];
+  timelineFrames?: Array<{ frameId: string; createdAt: string; assetId: string }>;
+  loopRange?: { startFrameId: string; endFrameId: string };
+};
+```
+
+### RecordJob
+
+```ts
+type RecordJob = {
+  sessionId: string;
+  source: "output" | "full-session";
+  startFrameId?: string;
+  endFrameId?: string;
+  format: "mp4" | "gif" | "webm";
 };
 ```
 
@@ -124,7 +147,7 @@ type SessionState = {
 Responsibilities:
 
 - accept ROI jobs
-- produce `4-8` candidates fast
+- produce sequential frames fast
 - optimize for first-pixel latency, not final image quality
 
 Default models:
@@ -136,7 +159,7 @@ Rules:
 
 - never block on upscale
 - avoid full-frame rerender unless explicitly required
-- prioritize `time to first candidate`
+- prioritize `time to first frame` and steady frame cadence
 
 ### Refine Lane
 
@@ -163,11 +186,20 @@ Rules:
 - always detached from the preview loop
 - cancel stale upscale jobs when the user keeps editing
 
+### Record Lane
+
+Responsibilities:
+
+- export output-only or full-session recordings
+- never block preview
+- support frame-range clips and live capture
+
 ## Queue Design
 
 - `preview` queue has the highest priority
 - `refine` queue runs after preview and can be canceled if the user edits again
 - `upscale` queue runs only for selected images
+- `record` queue runs only for selected frame ranges or explicit live capture
 
 Cancellation behavior:
 
@@ -178,7 +210,7 @@ Cancellation behavior:
 
 - store prompts, masks, ROI, and reference IDs in `SessionState`
 - store image assets separately from session metadata
-- keep `seed history` because burst candidate replay is useful for user trust and debugging
+- keep `seed history` and ordered `timelineFrames` for playback, loop, and capture
 - version the session state so stale preview/refine results can be discarded safely
 
 ## Product Phases
@@ -188,10 +220,12 @@ Cancellation behavior:
 - custom browser canvas
 - ROI tracking
 - prompt + references
-- `4` preview variants
+- live frame stream
+- right-hand timeline rail
 - preview lane with `SDXL-Turbo`
 - refine lane with `Qwen-Image-Edit`
-- simple result selection
+- play/pause/scrub controls
+- loop markers and recording stubs
 
 Success criterion:
 
@@ -223,17 +257,19 @@ The system remains responsive and predictable with real user sessions and concur
 
 ## Recommended First Benchmarks
 
-- `1024` prompt-only preview burst
-- `1024` image+prompt preview burst
+- `1024` prompt-only preview stream
+- `1024` image+prompt preview stream
 - `512-768 ROI` mask edit burst
 - refine after `500-800 ms` idle
 - upscale after explicit selection
+- timeline playback loop over recent frames
+- record output-only clip
 
 ## Why Preview-Fast + Refine-Later Is Mandatory
 
 This is the main design law of the product:
 
-- the user judges responsiveness from the first visible candidate
-- the user judges quality after they commit to a direction
+- the user judges responsiveness from the first visible frame and how alive the stream feels
+- the user judges quality after they commit to a direction or rewind to a better moment
 
 Those are different moments, so they must be served by different lanes.
