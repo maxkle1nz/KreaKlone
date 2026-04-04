@@ -8,6 +8,7 @@ function normalizePreviewVariant(variant, index, job) {
     variantId: variant?.variantId ?? `${job.jobId}_v${index + 1}`,
     ordinal: Number.isInteger(variant?.ordinal) ? variant.ordinal : index,
     seed: Number.isFinite(variant?.seed) ? variant.seed : job.sessionVersion * 100 + index + 1,
+    audioPositionMs: Number.isFinite(variant?.audioPositionMs) ? variant.audioPositionMs : (Number.isFinite(variant?.audio_position_ms) ? variant.audio_position_ms : (job.audioPositionMs ?? null)),
     mimeType: variant?.mimeType ?? 'image/png',
     uri: variant?.uri,
     metadata: variant?.metadata ?? {}

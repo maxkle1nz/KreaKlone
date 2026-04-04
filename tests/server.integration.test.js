@@ -215,6 +215,51 @@ test('http + websocket scaffold preserves real preview worker responses through 
     assert.equal(assetPayload.metadata.serviceId, 'preview-worker');
     assert.equal(assetPayload.metadata.queue, 'preview');
     assert.equal(assetPayload.metadata.provider.mode, 'real');
+    assert.equal(adapter.requests[0].job.audioPositionMs ?? null, null);
+
+    await new Promise((resolve) => {
+      socket.addEventListener('close', resolve, { once: true });
+      socket.close();
+    });
+  } finally {
+    await appStack.stop();
+    await workerStack.stop();
+    await adapter.stop();
+  }
+});
+
+test('real preview worker audioPositionMs flows through to timeline state', async () => {
+  const adapter = await startRealPreviewAdapter();
+  const workerStack = await startWorkerStack({
+    previewProvider: createRealPreviewProvider({ endpointUrl: adapter.url })
+  });
+  const appStack = await startAppWithWorkers(workerStack);
+
+  try {
+    const sessionResponse = await fetch(`${appStack.baseUrl}/api/sessions`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({})
+    });
+    const sessionPayload = await sessionResponse.json();
+    const sessionId = sessionPayload.session.sessionId;
+
+    const socket = new WebSocket(appStack.baseUrl.replace('http', 'ws') + '/ws');
+    await new Promise((resolve, reject) => {
+      socket.addEventListener('open', resolve, { once: true });
+      socket.addEventListener('error', reject, { once: true });
+    });
+    socket.send(JSON.stringify({ type: 'session.join', payload: { sessionId } }));
+    await waitFor(socket, 'session.state', (payload) => payload.sessionId === sessionId);
+
+    socket.send(JSON.stringify({ type: 'preview.request', payload: { sessionId, burstCount: 2, audioPositionMs: 4200 } }));
+    await waitFor(socket, 'preview.completed', (payload) => payload.sessionId === sessionId);
+
+    const timelineSession = appStack.app.runtime.getSession(sessionId);
+    assert.equal(timelineSession.timelineFrames.length, 2);
+    assert.equal(timelineSession.timelineFrames[0].audioPositionMs, 4200);
+    assert.equal(timelineSession.timelineFrames[1].audioPositionMs, 4200);
+    assert.equal(adapter.requests[0].job.audioPositionMs, 4200);
 
     await new Promise((resolve) => {
       socket.addEventListener('close', resolve, { once: true });

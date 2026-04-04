@@ -34,6 +34,7 @@ export async function startRealPreviewAdapter() {
       images: Array.from({ length: burstCount }, (_, ordinal) => ({
         id: `${job.jobId}_real_${ordinal + 1}`,
         seed: job.sessionVersion * 1000 + ordinal + 1,
+        audio_position_ms: job.audioPositionMs ?? null,
         mime_type: 'image/png',
         image_url: createPngDataUri(`${job.jobId}:${ordinal + 1}:${job.prompt?.positive ?? 'preview'}`)
       }))

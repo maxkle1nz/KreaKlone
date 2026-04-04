@@ -28,6 +28,7 @@ function buildSyntheticPreviewPayload(job, manifest) {
       variantId: `${job.jobId}_v${ordinal + 1}`,
       ordinal,
       seed: job.sessionVersion * 100 + ordinal + 1,
+      audioPositionMs: job.audioPositionMs ?? null,
       mimeType: 'image/svg+xml',
       uri: createSvgDataUri({
         title: `${manifest.displayName} preview ${ordinal + 1}/${job.burstCount}`,
@@ -52,6 +53,7 @@ function normalizeVariant(source, job, ordinal) {
     variantId: source?.variantId ?? source?.id ?? `${job.jobId}_v${ordinal + 1}`,
     ordinal: Number.isInteger(source?.ordinal) ? source.ordinal : ordinal,
     seed: Number.isFinite(source?.seed) ? source.seed : fallbackSeed,
+    audioPositionMs: Number.isFinite(source?.audioPositionMs) ? source.audioPositionMs : (Number.isFinite(source?.audio_position_ms) ? source.audio_position_ms : (job.audioPositionMs ?? null)),
     mimeType: source?.mimeType ?? source?.mime_type ?? source?.contentType ?? 'image/png',
     uri
   };
