@@ -55,6 +55,26 @@ test('preview work appends timeline frames and recording returns an asset for th
   assert.equal(recordingEvents.length, 1);
 });
 
+test('record.stop clears the latest recording asset from session state', async () => {
+  const runtime = createMvpRuntime({ previewStepMs: 5, refineStepMs: 5, upscaleStepMs: 5 });
+  const { session } = runtime.createSession('session_record_stop');
+
+  runtime.joinSession(session.sessionId, {
+    send() {}
+  });
+
+  runtime.requestPreview(session.sessionId, { burstCount: 1 });
+  await runtime.queues.previewQueue.waitForIdle();
+
+  const startResult = runtime.requestRecord(session.sessionId, 'output');
+  assert.equal(typeof startResult.assetId, 'string');
+  assert.equal(typeof runtime.getSession(session.sessionId).latestRecordingAssetId, 'string');
+
+  const stopResult = runtime.stopRecord(session.sessionId);
+  assert.equal(stopResult.cleared, true);
+  assert.equal(runtime.getSession(session.sessionId).latestRecordingAssetId, undefined);
+});
+
 test('preview request propagates audioPositionMs into timeline frames', async () => {
   const runtime = createMvpRuntime({ previewStepMs: 5, refineStepMs: 5, upscaleStepMs: 5 });
   const { session } = runtime.createSession('session_audio_timeline');

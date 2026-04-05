@@ -196,3 +196,11 @@ export function recordCaptureAsset(state, assetId) {
     updatedAt: new Date().toISOString()
   };
 }
+
+export function clearCaptureAsset(state) {
+  return {
+    ...state,
+    latestRecordingAssetId: undefined,
+    updatedAt: new Date().toISOString()
+  };
+}
