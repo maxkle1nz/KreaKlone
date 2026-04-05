@@ -35,6 +35,13 @@ export type PreviewFrame = {
   jobId?: string;
 };
 
+export type SessionAsset = {
+  assetId: string;
+  uri: string;
+  kind?: string;
+  mimeType?: string;
+};
+
 export type ConnectionStatus = "disconnected" | "connecting" | "connected" | "error";
 
 export type LaneStatus = "idle" | "working" | "done" | "error";
@@ -66,6 +73,7 @@ export type KreakloneSessionHook = {
   liveFrames: PreviewFrame[];
   activeVariant: PreviewFrame | null;
   activeFrame: PreviewFrame | null;
+  latestRecordingAsset: SessionAsset | null;
   isGenerating: boolean;
   lastError: string | null;
   laneStatuses: LaneStatuses;
@@ -116,6 +124,7 @@ export function useKreakloneSession(): KreakloneSessionHook {
   const [sessionState, setSessionState] = useState<SessionState | null>(null);
   const [liveFrames, setLiveFrames] = useState<PreviewFrame[]>([]);
   const [activeFrame, setActiveFrame] = useState<PreviewFrame | null>(null);
+  const [latestRecordingAsset, setLatestRecordingAsset] = useState<SessionAsset | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [lastError, setLastError] = useState<string | null>(null);
   const [laneStatuses, setLaneStatuses] = useState<LaneStatuses>({
@@ -129,11 +138,26 @@ export function useKreakloneSession(): KreakloneSessionHook {
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reconnectDelay = useRef(MIN_RECONNECT_MS);
   const isMounted = useRef(true);
+  const latestRecordingAssetIdRef = useRef<string | null>(null);
 
   const send = useCallback((msg: object) => {
     if (ws.current && ws.current.readyState === WebSocket.OPEN) {
       ws.current.send(JSON.stringify(msg));
     }
+  }, []);
+
+  const loadAsset = useCallback(async (assetId: string) => {
+    const response = await fetch(`/api/assets/${assetId}`);
+    if (!response.ok) {
+      throw new Error(`Asset fetch failed: ${response.status}`);
+    }
+    const asset = await response.json();
+    return {
+      assetId: asset.assetId,
+      uri: asset.uri,
+      kind: asset.kind,
+      mimeType: asset.mimeType,
+    } satisfies SessionAsset;
   }, []);
 
   const handleServerMessageRef = useRef<(msg: { type: string; payload: Record<string, unknown> }) => void>(() => {});
@@ -152,6 +176,17 @@ export function useKreakloneSession(): KreakloneSessionHook {
             const nextActive = nextFrames.find((frame) => frame.variantId === session.activeFrameId) ?? null;
             if (nextActive) setActiveFrame(nextActive);
           }
+        }
+        const nextRecordingAssetId = session.latestRecordingAssetId ?? null;
+        if (nextRecordingAssetId && nextRecordingAssetId !== latestRecordingAssetIdRef.current) {
+          latestRecordingAssetIdRef.current = nextRecordingAssetId;
+          loadAsset(nextRecordingAssetId)
+            .then((asset) => {
+              if (isMounted.current) setLatestRecordingAsset(asset);
+            })
+            .catch(() => {
+              // ignore recording asset fetch failures in the integration lane
+            });
         }
         break;
       }
@@ -201,6 +236,11 @@ export function useKreakloneSession(): KreakloneSessionHook {
         setTimeout(() => setLaneStatuses((prev) => ({ ...prev, upscale: "idle" })), 1500);
         break;
       case "record.completed":
+        latestRecordingAssetIdRef.current = String(msg.payload.assetId);
+        setLatestRecordingAsset({
+          assetId: String(msg.payload.assetId),
+          uri: String(msg.payload.uri),
+        });
         setLastError(null);
         break;
       case "job.failed":
@@ -211,7 +251,7 @@ export function useKreakloneSession(): KreakloneSessionHook {
       default:
         break;
     }
-  }, []);
+  }, [loadAsset]);
 
   useEffect(() => {
     handleServerMessageRef.current = handleServerMessage;
@@ -416,6 +456,7 @@ export function useKreakloneSession(): KreakloneSessionHook {
     liveFrames,
     activeVariant: activeFrame,
     activeFrame,
+    latestRecordingAsset,
     isGenerating,
     lastError,
     laneStatuses,

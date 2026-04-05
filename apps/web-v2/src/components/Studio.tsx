@@ -209,6 +209,7 @@ export function Studio() {
           deleteFrame={session.deleteFrame}
           sendRecordStart={session.sendRecordStart}
           sendRecordStop={session.sendRecordStop}
+          latestRecordingAsset={session.latestRecordingAsset}
           onExport={handleExport}
           exportProgress={exportProgress}
           frameTagMap={frameTagMap}

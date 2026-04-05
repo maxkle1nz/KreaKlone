@@ -1,5 +1,5 @@
 import { useRef, useCallback, useState, useEffect, useMemo } from "react";
-import type { TimelineFrame, SessionState } from "@/hooks/useYlimitSession";
+import type { TimelineFrame, SessionAsset, SessionState } from "@/hooks/useYlimitSession";
 import type { MusicSyncHook, MusicSection } from "@/hooks/useMusicSync";
 
 /* ── Export opts passed to onExport ── */
@@ -24,6 +24,7 @@ type Props = {
   deleteFrame: (frameId: string) => void;
   sendRecordStart: (source?: "output" | "full-session") => void;
   sendRecordStop: () => void;
+  latestRecordingAsset: SessionAsset | null;
   onExport: (opts: ExportOpts) => void;
   exportProgress: number | null;
   frameTagMap: Map<string, string>;
@@ -255,7 +256,7 @@ function SectionEditor({
 export function UnifiedTimeline({
   sessionId, sessionState, isGenerating,
   music, sendTimelineSeek, sendTimelinePlay, sendTimelinePause,
-  sendLoopSet, sendLoopClear, pinFrame, deleteFrame, sendRecordStart, sendRecordStop, onExport, exportProgress, frameTagMap,
+  sendLoopSet, sendLoopClear, pinFrame, deleteFrame, sendRecordStart, sendRecordStop, latestRecordingAsset, onExport, exportProgress, frameTagMap,
   onFrameToCanvas, onFrameToReference, onFrameRefine,
   playFps: playFpsProp, setPlayFps: setPlayFpsProp,
 }: Props) {
@@ -1047,6 +1048,20 @@ export function UnifiedTimeline({
           >
             {recordMode === "recording" ? "Stop Rec" : "Record"}
           </button>
+          {latestRecordingAsset && (
+            <button
+              className="yl-ut-btn"
+              onClick={() => {
+                const link = document.createElement("a");
+                link.href = latestRecordingAsset.uri;
+                link.download = `ylimit_capture_${latestRecordingAsset.assetId}.svg`;
+                link.click();
+              }}
+              title="Download the latest captured output"
+            >
+              Save Capture
+            </button>
+          )}
         </div>
       </div>
 
