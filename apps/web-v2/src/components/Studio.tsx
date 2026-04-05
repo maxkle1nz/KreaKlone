@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { DrawingCanvas } from "@/components/DrawingCanvas";
 import { LiveOutput } from "@/components/LiveOutput";
 import { PromptBar } from "@/components/PromptBar";
@@ -21,23 +21,31 @@ export function Studio() {
   const [exportProgress, setExportProgress] = useState<number | null>(null);
   const importUriRef = useRef<((uri: string) => void) | null>(null);
   const addReferenceUriRef = useRef<((assetId: string, uri: string) => void) | null>(null);
-  const [frameTagMap] = useState<Map<string, string>>(new Map());
+  const [frameTagMap, setFrameTagMap] = useState<Map<string, string>>(new Map());
+
+  const currentAudioPositionMs = music.audioBuffer ? Math.round(music.playheadMs) : null;
+
+  const triggerGenerate = useCallback((requestedBudget = frameBudget, audioPositionMs: number | null = currentAudioPositionMs) => {
+    if (session.status !== "connected" || session.isGenerating) {
+      return;
+    }
+
+    session.sendGenerate(requestedBudget, {
+      audioPositionMs: typeof audioPositionMs === "number" ? audioPositionMs : null,
+    });
+  }, [currentAudioPositionMs, frameBudget, session]);
 
   const handleCanvasEvent = useCallback((event: CanvasEventPayload) => {
     session.sendCanvasEvent(event);
   }, [session]);
 
   const handleStrokeComplete = useCallback(() => {
-    if (session.status === "connected" && !session.isGenerating) {
-      session.sendGenerate(frameBudget);
-    }
-  }, [frameBudget, session]);
+    triggerGenerate(frameBudget);
+  }, [frameBudget, triggerGenerate]);
 
   const handlePromptChange = useCallback(() => {
-    if (session.status === "connected" && !session.isGenerating) {
-      session.sendGenerate(frameBudget);
-    }
-  }, [frameBudget, session]);
+    triggerGenerate(frameBudget);
+  }, [frameBudget, triggerGenerate]);
 
   const handleFrameToCanvas = useCallback((uri: string) => {
     importUriRef.current?.(uri);
@@ -71,6 +79,52 @@ export function Studio() {
       setExportProgress(null);
     }
   }, [music.audioBuffer, playFps]);
+
+  useEffect(() => {
+    const frames = session.sessionState?.timelineFrames ?? [];
+    if (frames.length === 0) {
+      setFrameTagMap(new Map());
+      return;
+    }
+
+    setFrameTagMap(() => {
+      const next = new Map<string, string>();
+      frames.forEach((frame) => {
+        if (typeof frame.audioPositionMs !== "number") return;
+        const section = music.getSectionAtMs(frame.audioPositionMs);
+        if (section) {
+          next.set(frame.frameId, section.id);
+        }
+      });
+      return next;
+    });
+  }, [music, session.sessionState?.timelineFrames]);
+
+  useEffect(() => {
+    if (session.status !== "connected" || !music.audioBuffer || music.syncMode === "free") {
+      music.stopSyncScheduler();
+      return;
+    }
+
+    music.startSyncScheduler(({ beatMs, burstCount, section }) => {
+      if (section?.canvasState?.prompt) {
+        session.sendPromptUpdate(
+          section.canvasState.prompt,
+          section.canvasState.negativePrompt ?? "",
+        );
+      }
+
+      const generatedBurstCount = music.syncMode === "section-locked"
+        ? Math.max(1, Math.min(16, burstCount))
+        : frameBudget;
+
+      session.sendGenerate(generatedBurstCount, { audioPositionMs: beatMs });
+    });
+
+    return () => {
+      music.stopSyncScheduler();
+    };
+  }, [frameBudget, music, session]);
 
   return (
     <div className="yl-studio">

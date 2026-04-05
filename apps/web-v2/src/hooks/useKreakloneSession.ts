@@ -45,6 +45,10 @@ export type LaneStatuses = {
   upscale: LaneStatus;
 };
 
+export type GenerateOptions = {
+  audioPositionMs?: number | null;
+};
+
 export type CanvasEventPayload =
   | { type: "brush"; strokeId: string; layerId: string; size: number; points: number[] }
   | { type: "erase"; strokeId: string; layerId: string; size: number; points: number[] }
@@ -65,7 +69,7 @@ export type KreakloneSessionHook = {
   isGenerating: boolean;
   lastError: string | null;
   laneStatuses: LaneStatuses;
-  sendGenerate: (frameBudget?: number) => void;
+  sendGenerate: (frameBudget?: number, options?: GenerateOptions) => void;
   sendCancel: () => void;
   sendCanvasEvent: (event: CanvasEventPayload) => void;
   sendPromptUpdate: (positive: string, negative?: string) => void;
@@ -289,9 +293,16 @@ export function useKreakloneSession(): KreakloneSessionHook {
     };
   }, [connectWs]);
 
-  const sendGenerate = useCallback((frameBudget = 4) => {
+  const sendGenerate = useCallback((frameBudget = 4, options: GenerateOptions = {}) => {
     if (!sessionIdRef.current) return;
-    send({ type: "preview.request", payload: { sessionId: sessionIdRef.current, burstCount: frameBudget } });
+    send({
+      type: "preview.request",
+      payload: {
+        sessionId: sessionIdRef.current,
+        burstCount: frameBudget,
+        ...(typeof options.audioPositionMs === "number" ? { audioPositionMs: options.audioPositionMs } : {}),
+      }
+    });
   }, [send]);
 
   const sendCancel = useCallback(() => {
