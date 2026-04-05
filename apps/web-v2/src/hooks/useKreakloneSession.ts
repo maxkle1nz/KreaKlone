@@ -237,15 +237,32 @@ export function useKreakloneSession(): KreakloneSessionHook {
           setLiveFrames((prev) => prev.map((frame) => (
             frame.variantId === payload.sourceVariantId ? { ...frame, uri: payload.uri, assetId: payload.assetId } : frame
           )));
+          setActiveFrame((prev) => (
+            prev && prev.variantId === payload.sourceVariantId
+              ? { ...prev, uri: payload.uri, assetId: payload.assetId }
+              : prev
+          ));
         }
         setLaneStatuses((prev) => ({ ...prev, enhance: "done" }));
         setTimeout(() => setLaneStatuses((prev) => ({ ...prev, enhance: "idle" })), 1500);
         break;
       }
-      case "upscale.completed":
+      case "upscale.completed": {
+        const payload = msg.payload as { assetId: string; uri: string; sourceVariantId?: string };
+        if (payload.sourceVariantId) {
+          setLiveFrames((prev) => prev.map((frame) => (
+            frame.variantId === payload.sourceVariantId ? { ...frame, uri: payload.uri, assetId: payload.assetId } : frame
+          )));
+          setActiveFrame((prev) => (
+            prev && prev.variantId === payload.sourceVariantId
+              ? { ...prev, uri: payload.uri, assetId: payload.assetId }
+              : prev
+          ));
+        }
         setLaneStatuses((prev) => ({ ...prev, upscale: "done" }));
         setTimeout(() => setLaneStatuses((prev) => ({ ...prev, upscale: "idle" })), 1500);
         break;
+      }
       case "record.completed":
         latestRecordingAssetIdRef.current = String(msg.payload.assetId);
         setLatestRecordingAsset({
