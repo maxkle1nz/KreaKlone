@@ -184,6 +184,15 @@ const HIT = 14;
 const DRAG_THRESHOLD = 5;
 const MIN_GAP_MS = 200; /* minimum ms gap enforced between adjacent frames */
 
+function fileExtensionForAsset(asset: SessionAsset): string {
+  if (asset.mimeType === "image/png") return "png";
+  if (asset.mimeType === "image/jpeg") return "jpg";
+  if (asset.mimeType === "image/webp") return "webp";
+  if (asset.mimeType === "video/webm") return "webm";
+  if (asset.mimeType === "image/svg+xml") return "svg";
+  return asset.kind === "recording" ? "svg" : "bin";
+}
+
 /* ── Section editor ── */
 function SectionEditor({
   section,
@@ -1054,7 +1063,7 @@ export function UnifiedTimeline({
               onClick={() => {
                 const link = document.createElement("a");
                 link.href = latestRecordingAsset.uri;
-                link.download = `ylimit_capture_${latestRecordingAsset.assetId}.svg`;
+                link.download = `ylimit_capture_${latestRecordingAsset.assetId}.${fileExtensionForAsset(latestRecordingAsset)}`;
                 link.click();
               }}
               title="Download the latest captured output"

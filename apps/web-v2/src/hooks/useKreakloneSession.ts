@@ -187,6 +187,9 @@ export function useKreakloneSession(): KreakloneSessionHook {
             .catch(() => {
               // ignore recording asset fetch failures in the integration lane
             });
+        } else if (!nextRecordingAssetId) {
+          latestRecordingAssetIdRef.current = null;
+          setLatestRecordingAsset(null);
         }
         break;
       }
