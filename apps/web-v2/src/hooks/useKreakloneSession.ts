@@ -86,6 +86,7 @@ export type KreakloneSessionHook = {
   latestRecordingAsset: SessionAsset | null;
   isGenerating: boolean;
   lastError: string | null;
+  pendingReplayCount: number;
   laneStatuses: LaneStatuses;
   sendGenerate: (frameBudget?: number, options?: GenerateOptions) => void;
   sendCancel: () => void;
@@ -185,6 +186,7 @@ export function useKreakloneSession(): KreakloneSessionHook {
   const [latestRecordingAsset, setLatestRecordingAsset] = useState<SessionAsset | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [lastError, setLastError] = useState<string | null>(null);
+  const [pendingReplayCount, setPendingReplayCount] = useState(0);
   const [laneStatuses, setLaneStatuses] = useState<LaneStatuses>({
     generate: "idle",
     enhance: "idle",
@@ -201,26 +203,31 @@ export function useKreakloneSession(): KreakloneSessionHook {
   const latestRecordingAssetIdRef = useRef<string | null>(null);
   const pendingClientMessagesRef = useRef<ClientMessage[]>([]);
 
+  const setPendingClientMessages = useCallback((messages: ClientMessage[]) => {
+    pendingClientMessagesRef.current = messages;
+    setPendingReplayCount(messages.length);
+  }, []);
+
   const enqueuePendingMessage = useCallback((message: ClientMessage) => {
     const queued = appendPendingClientMessage(pendingClientMessagesRef.current, message);
     if (queued.length > MAX_PENDING_CLIENT_MESSAGES) {
-      pendingClientMessagesRef.current = queued.slice(-MAX_PENDING_CLIENT_MESSAGES);
+      setPendingClientMessages(queued.slice(-MAX_PENDING_CLIENT_MESSAGES));
       setLastError(`Connection interrupted — replaying latest ${MAX_PENDING_CLIENT_MESSAGES} actions`);
       return;
     }
-    pendingClientMessagesRef.current = queued;
-  }, []);
+    setPendingClientMessages(queued);
+  }, [setPendingClientMessages]);
 
   const flushPendingMessages = useCallback((socket: WebSocket) => {
     if (pendingClientMessagesRef.current.length === 0) {
       return;
     }
     const queued = pendingClientMessagesRef.current;
-    pendingClientMessagesRef.current = [];
+    setPendingClientMessages([]);
     queued.forEach((message) => {
       socket.send(JSON.stringify(message));
     });
-  }, []);
+  }, [setPendingClientMessages]);
 
   const send = useCallback((msg: ClientMessage, options: { queueIfDisconnected?: boolean } = {}) => {
     const socket = ws.current;
@@ -538,10 +545,10 @@ export function useKreakloneSession(): KreakloneSessionHook {
     return () => {
       isMounted.current = false;
       if (reconnectTimer.current) clearTimeout(reconnectTimer.current);
-      pendingClientMessagesRef.current = [];
+      setPendingClientMessages([]);
       ws.current?.close();
     };
-  }, [connectWs]);
+  }, [connectWs, setPendingClientMessages]);
 
   const sendGenerate = useCallback((frameBudget = 4, options: GenerateOptions = {}) => {
     if (!sessionIdRef.current) return;
@@ -560,16 +567,16 @@ export function useKreakloneSession(): KreakloneSessionHook {
     const cancelMessage = { type: "preview.cancel", payload: { sessionId: sessionIdRef.current, queue: "all" } } satisfies ClientMessage;
     const socket = ws.current;
     if (socket && socket.readyState === WebSocket.OPEN) {
-      pendingClientMessagesRef.current = [];
+      setPendingClientMessages([]);
       socket.send(JSON.stringify(cancelMessage));
     } else {
-      pendingClientMessagesRef.current = replacePendingClientMessages(cancelMessage);
+      setPendingClientMessages(replacePendingClientMessages(cancelMessage));
       setStatus("connecting");
     }
     setIsGenerating(false);
     setLastError(null);
     setLaneStatuses({ generate: "idle", enhance: "idle", upscale: "idle" });
-  }, []);
+  }, [setPendingClientMessages]);
 
   const sendCanvasEvent = useCallback((event: CanvasEventPayload) => {
     if (!sessionIdRef.current) return;
@@ -692,6 +699,7 @@ export function useKreakloneSession(): KreakloneSessionHook {
     latestRecordingAsset,
     isGenerating,
     lastError,
+    pendingReplayCount,
     laneStatuses,
     sendGenerate,
     sendCancel,

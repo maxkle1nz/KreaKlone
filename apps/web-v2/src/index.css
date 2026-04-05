@@ -74,10 +74,27 @@ html, body, #root {
   justify-content: center;
 }
 
+.yl-status-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 8px;
+  border: 1px solid var(--yl-border);
+  border-radius: 999px;
+  background: rgba(255,255,255,0.02);
+}
+
 .yl-status-dot {
   width: 5px;
   height: 5px;
   border-radius: 50%;
+}
+
+.yl-status-label {
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  font-family: var(--yl-mono);
+  color: var(--yl-muted);
 }
 
 .yl-header-right {
@@ -818,6 +835,10 @@ html, body, #root {
 
 .yl-prompt-status-error {
   color: #ef4444;
+}
+
+.yl-prompt-status-info {
+  color: var(--yl-muted);
 }
 
 .yl-debounce-ring {

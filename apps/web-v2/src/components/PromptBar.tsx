@@ -6,6 +6,7 @@ type PromptBarProps = {
   isGenerating: boolean;
   prompt: { positive: string; negative: string } | null;
   lastError: string | null;
+  pendingReplayCount: number;
   sendPromptUpdate: YlimitSessionHook["sendPromptUpdate"];
   sendGenerate: YlimitSessionHook["sendGenerate"];
   sendCancel: YlimitSessionHook["sendCancel"];
@@ -20,6 +21,7 @@ export function PromptBar({
   isGenerating,
   prompt,
   lastError,
+  pendingReplayCount,
   sendPromptUpdate,
   sendGenerate,
   sendCancel,
@@ -71,6 +73,16 @@ export function PromptBar({
     sendPromptUpdate(positive, negative);
     sendGenerate(burstCount);
   }, [positive, negative, burstCount, sendPromptUpdate, sendGenerate]);
+
+  const statusMessage = lastError
+    ? null
+    : status === "connecting"
+      ? `Reconnecting${pendingReplayCount > 0 ? ` — ${pendingReplayCount} action${pendingReplayCount === 1 ? "" : "s"} queued` : "…"}`
+      : status === "error"
+        ? "Connection issue detected"
+        : status === "disconnected"
+          ? "Disconnected"
+          : null;
 
   return (
     <div className="yl-prompt-bar">
@@ -137,6 +149,12 @@ export function PromptBar({
       {lastError && (
         <div className="yl-prompt-status yl-prompt-status-error" role="status">
           {lastError}
+        </div>
+      )}
+
+      {!lastError && statusMessage && (
+        <div className="yl-prompt-status yl-prompt-status-info" role="status">
+          {statusMessage}
         </div>
       )}
     </div>

@@ -25,6 +25,13 @@ export function Studio() {
   const [frameTagMap, setFrameTagMap] = useState<Map<string, string>>(new Map());
 
   const currentAudioPositionMs = music.audioBuffer ? Math.round(music.playheadMs) : null;
+  const headerStatusLabel = session.status === "connected"
+    ? "LIVE"
+    : session.status === "connecting"
+      ? (session.pendingReplayCount > 0 ? `SYNC ${session.pendingReplayCount}` : "SYNC")
+      : session.status === "error"
+        ? "ERROR"
+        : "OFFLINE";
 
   const triggerGenerate = useCallback((requestedBudget = frameBudget, options: GenerateOptions = {}) => {
     if (session.status !== "connected" || session.isGenerating) {
@@ -134,19 +141,22 @@ export function Studio() {
       <div className="yl-header-bar">
         <span className="yl-logo">YLIMIT</span>
         <div className="yl-header-center">
-          <span
-            className="yl-status-dot"
-            style={{
-              background:
-                session.status === "connected"
-                  ? "#22c55e"
-                  : session.status === "connecting"
-                    ? "#f59e0b"
-                    : session.status === "error"
-                      ? "#ef4444"
-                      : "#6b7280"
-            }}
-          />
+          <div className="yl-status-chip">
+            <span
+              className="yl-status-dot"
+              style={{
+                background:
+                  session.status === "connected"
+                    ? "#22c55e"
+                    : session.status === "connecting"
+                      ? "#f59e0b"
+                      : session.status === "error"
+                        ? "#ef4444"
+                        : "#6b7280"
+              }}
+            />
+            <span className="yl-status-label">{headerStatusLabel}</span>
+          </div>
         </div>
       </div>
 
@@ -191,6 +201,7 @@ export function Studio() {
           isGenerating={session.isGenerating}
           prompt={session.sessionState?.prompt ?? null}
           lastError={session.lastError}
+          pendingReplayCount={session.pendingReplayCount}
           sendPromptUpdate={session.sendPromptUpdate}
           sendGenerate={triggerGenerate}
           sendCancel={session.sendCancel}
