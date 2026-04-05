@@ -205,7 +205,10 @@ export function Studio() {
           sendTimelinePause={session.sendTimelinePause}
           sendLoopSet={session.sendLoopSet}
           sendLoopClear={session.sendLoopClear}
+          pinFrame={session.pinFrame}
           deleteFrame={session.deleteFrame}
+          sendRecordStart={session.sendRecordStart}
+          sendRecordStop={session.sendRecordStop}
           onExport={handleExport}
           exportProgress={exportProgress}
           frameTagMap={frameTagMap}

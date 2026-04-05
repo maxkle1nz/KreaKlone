@@ -20,7 +20,10 @@ type Props = {
   sendTimelinePause: () => void;
   sendLoopSet: (startId: string, endId: string) => void;
   sendLoopClear: () => void;
+  pinFrame: (frameId: string) => void;
   deleteFrame: (frameId: string) => void;
+  sendRecordStart: (source?: "output" | "full-session") => void;
+  sendRecordStop: () => void;
   onExport: (opts: ExportOpts) => void;
   exportProgress: number | null;
   frameTagMap: Map<string, string>;
@@ -252,7 +255,7 @@ function SectionEditor({
 export function UnifiedTimeline({
   sessionId, sessionState, isGenerating,
   music, sendTimelineSeek, sendTimelinePlay, sendTimelinePause,
-  sendLoopSet, sendLoopClear, deleteFrame, onExport, exportProgress, frameTagMap,
+  sendLoopSet, sendLoopClear, pinFrame, deleteFrame, sendRecordStart, sendRecordStop, onExport, exportProgress, frameTagMap,
   onFrameToCanvas, onFrameToReference, onFrameRefine,
   playFps: playFpsProp, setPlayFps: setPlayFpsProp,
 }: Props) {
@@ -305,6 +308,11 @@ export function UnifiedTimeline({
 
   /* ── Pinned ── */
   const [pinnedIds, setPinnedIds] = useState<Set<string>>(new Set());
+  const [recordMode, setRecordMode] = useState<"idle" | "recording">("idle");
+
+  useEffect(() => {
+    setPinnedIds(new Set(frames.filter((frame) => frame.isPinned).map((frame) => frame.frameId)));
+  }, [frames]);
 
   /* ── Timeline geometry ── */
   const hasAudio = !!music.audioBuffer;
@@ -841,11 +849,14 @@ export function UnifiedTimeline({
       }
       if (e.code === "KeyK" && !e.ctrlKey && !e.metaKey) {
         const t = getTarget();
-        if (t) setPinnedIds((prev) => {
-          const next = new Set(prev);
-          prev.has(t.frame.frameId) ? next.delete(t.frame.frameId) : next.add(t.frame.frameId);
-          return next;
-        });
+        if (t) {
+          setPinnedIds((prev) => {
+            const next = new Set(prev);
+            prev.has(t.frame.frameId) ? next.delete(t.frame.frameId) : next.add(t.frame.frameId);
+            return next;
+          });
+          pinFrame(t.frame.frameId);
+        }
       }
       if ((e.code === "KeyD" || e.code === "Backspace") && !e.ctrlKey && !e.metaKey) {
         const t = getTarget();
@@ -873,7 +884,7 @@ export function UnifiedTimeline({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [effectiveFrames, activeIndexEffective, hasAudio, musicPlayPause, playPauseFrames, sendTimelineSeek, deleteFrame, setRating, loopStartIdx, loopEndIdx, sendLoopSet]);
+  }, [effectiveFrames, activeIndexEffective, hasAudio, musicPlayPause, playPauseFrames, sendTimelineSeek, pinFrame, deleteFrame, setRating, loopStartIdx, loopEndIdx, sendLoopSet]);
 
   /* ── SVG dimensions ── */
   const svgW = timelineW;
@@ -1018,6 +1029,23 @@ export function UnifiedTimeline({
             title="Export video"
           >
             {exportProgress !== null ? `${Math.round(exportProgress)}%` : "Export"}
+          </button>
+          <button
+            className={`yl-ut-btn${recordMode === "recording" ? " on" : ""}`}
+            onClick={() => {
+              if (recordMode === "recording") {
+                sendRecordStop();
+                setRecordMode("idle");
+                return;
+              }
+              sendRecordStart("output");
+              setRecordMode("recording");
+              window.setTimeout(() => setRecordMode("idle"), 900);
+            }}
+            disabled={frames.length === 0}
+            title={recordMode === "recording" ? "Stop capture" : "Capture output from the current timeline"}
+          >
+            {recordMode === "recording" ? "Stop Rec" : "Record"}
           </button>
         </div>
       </div>
@@ -1356,6 +1384,7 @@ export function UnifiedTimeline({
               prev.has(ctxMenu.frameId) ? next.delete(ctxMenu.frameId) : next.add(ctxMenu.frameId);
               return next;
             });
+            pinFrame(ctxMenu.frameId);
             setCtxMenu(null);
           }}>
             {pinnedIds.has(ctxMenu.frameId) ? "Unpin" : "Pin"}
