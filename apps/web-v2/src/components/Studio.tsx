@@ -10,6 +10,7 @@ import type { CompositionDefaults } from "@/hooks/useBlockComposer";
 import { defaultCompositionDefaults } from "@/hooks/useBlockComposer";
 import { exportWebM, downloadBlob } from "@/utils/export";
 import type { ExportOpts } from "@/components/UnifiedTimeline";
+import type { GenerateOptions } from "@/hooks/useKreakloneSession";
 
 export function Studio() {
   const session = useKreakloneSession();
@@ -25,13 +26,15 @@ export function Studio() {
 
   const currentAudioPositionMs = music.audioBuffer ? Math.round(music.playheadMs) : null;
 
-  const triggerGenerate = useCallback((requestedBudget = frameBudget, audioPositionMs: number | null = currentAudioPositionMs) => {
+  const triggerGenerate = useCallback((requestedBudget = frameBudget, options: GenerateOptions = {}) => {
     if (session.status !== "connected" || session.isGenerating) {
       return;
     }
 
     session.sendGenerate(requestedBudget, {
-      audioPositionMs: typeof audioPositionMs === "number" ? audioPositionMs : null,
+      audioPositionMs: typeof options.audioPositionMs === "number"
+        ? options.audioPositionMs
+        : currentAudioPositionMs,
     });
   }, [currentAudioPositionMs, frameBudget, session]);
 
@@ -185,7 +188,7 @@ export function Studio() {
           status={session.status}
           isGenerating={session.isGenerating}
           sendPromptUpdate={session.sendPromptUpdate}
-          sendGenerate={session.sendGenerate}
+          sendGenerate={triggerGenerate}
           sendCancel={session.sendCancel}
           burstCount={frameBudget}
           setBurstCount={setFrameBudget}
