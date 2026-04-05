@@ -180,7 +180,9 @@ export function useKreakloneSession(): KreakloneSessionHook {
           setLiveFrames(nextFrames);
           if (session.activeFrameId) {
             const nextActive = nextFrames.find((frame) => frame.variantId === session.activeFrameId) ?? null;
-            if (nextActive) setActiveFrame(nextActive);
+            setActiveFrame(nextActive);
+          } else {
+            setActiveFrame(null);
           }
         }
         const nextRecordingAssetId = session.latestRecordingAssetId ?? null;
