@@ -200,9 +200,9 @@ export function LiveOutput({
           <div className="yl-variants-row">
             {liveFrames.map((v) => (
               <FrameThumb
-                key={v.variantId}
+                key={v.frameId ?? v.variantId}
                 variant={v}
-                isActive={v.variantId === activeFrame?.variantId}
+                isActive={(v.frameId ?? v.variantId) === (activeFrame?.frameId ?? activeFrame?.variantId)}
                 onClick={() => selectFrame(v)}
               />
             ))}

@@ -345,6 +345,8 @@ test('timeline management and session settings endpoints mutate session state', 
     await waitFor(socket, 'session.state', (payload) => payload.sessionId === sessionId);
 
     socket.send(JSON.stringify({ type: 'preview.request', payload: { sessionId, burstCount: 3 } }));
+    const firstTimelineFrame = await waitFor(socket, 'timeline.frame', (payload) => payload.sessionId === sessionId);
+    assert.equal(firstTimelineFrame.payload.variantId, firstTimelineFrame.payload.frameId);
     await waitFor(socket, 'preview.completed', (payload) => payload.sessionId === sessionId);
 
     const stateBefore = appStack.app.runtime.getSession(sessionId);

@@ -426,6 +426,7 @@ export class MvpRuntime {
         sessionId: job.sessionId,
         sessionVersion: job.sessionVersion,
         frameId: variantId,
+        variantId,
         ordinal,
         assetId: asset.assetId,
         uri: asset.uri,

@@ -28,6 +28,7 @@ export type TimelineFrame = {
 };
 
 export type PreviewFrame = {
+  frameId?: string;
   variantId: string;
   uri: string;
   ordinal: number;
@@ -115,15 +116,54 @@ function queueToLane(queue: unknown): keyof LaneStatuses {
   return "generate";
 }
 
-function toPreviewFrame(frame: TimelineFrame): PreviewFrame | null {
-  if (!frame.uri) return null;
+function resolvePreviewFrameIdentity(payload: { frameId?: unknown; variantId?: unknown }): { frameId?: string; variantId: string } | null {
+  const frameId = typeof payload.frameId === "string" && payload.frameId.length > 0 ? payload.frameId : undefined;
+  const variantId = typeof payload.variantId === "string" && payload.variantId.length > 0 ? payload.variantId : frameId;
+  if (!variantId) return null;
+  return { frameId, variantId };
+}
+
+function normalizePreviewFrame(
+  frame: Partial<TimelineFrame> & Partial<PreviewFrame> & { variantId?: string }
+): PreviewFrame | null {
+  if (typeof frame.uri !== "string" || frame.uri.length === 0) return null;
+  if (typeof frame.assetId !== "string" || frame.assetId.length === 0) return null;
+  const identity = resolvePreviewFrameIdentity(frame);
+  if (!identity) return null;
+  const ordinal = Number.isInteger(frame.ordinal) ? Number(frame.ordinal) : 0;
   return {
-    variantId: frame.frameId,
+    frameId: identity.frameId,
+    variantId: identity.variantId,
     uri: frame.uri,
-    ordinal: frame.ordinal ?? 0,
+    ordinal,
     assetId: frame.assetId,
-    jobId: frame.jobId,
+    jobId: typeof frame.jobId === "string" ? frame.jobId : undefined,
   };
+}
+
+function previewFrameKey(frame: Pick<PreviewFrame, "frameId" | "variantId">): string {
+  return frame.frameId ?? frame.variantId;
+}
+
+function matchesPreviewFrame(frame: Pick<PreviewFrame, "frameId" | "variantId">, targetId: string): boolean {
+  return frame.frameId === targetId || frame.variantId === targetId;
+}
+
+function upsertPreviewFrame(frames: PreviewFrame[], nextFrame: PreviewFrame): PreviewFrame[] {
+  const next = [
+    ...frames.filter((frame) => (
+      previewFrameKey(frame) !== previewFrameKey(nextFrame)
+      && frame.variantId !== nextFrame.variantId
+      && !(frame.frameId && nextFrame.frameId && frame.frameId === nextFrame.frameId)
+    )),
+    nextFrame,
+  ];
+  next.sort((a, b) => a.ordinal - b.ordinal);
+  return next;
+}
+
+function getFrameTargetId(frame: Pick<PreviewFrame, "frameId" | "variantId">): string {
+  return frame.frameId ?? frame.variantId;
 }
 
 export function useKreakloneSession(): KreakloneSessionHook {
@@ -181,11 +221,12 @@ export function useKreakloneSession(): KreakloneSessionHook {
         setSessionState(session);
         if (Array.isArray(session.timelineFrames)) {
           const nextFrames = session.timelineFrames
-            .map(toPreviewFrame)
+            .map(normalizePreviewFrame)
             .filter(Boolean) as PreviewFrame[];
           setLiveFrames(nextFrames);
-          if (session.activeFrameId) {
-            const nextActive = nextFrames.find((frame) => frame.variantId === session.activeFrameId) ?? null;
+          const activeFrameId = session.activeFrameId;
+          if (activeFrameId) {
+            const nextActive = nextFrames.find((frame) => matchesPreviewFrame(frame, activeFrameId)) ?? null;
             setActiveFrame(nextActive);
           } else {
             setActiveFrame(null);
@@ -236,11 +277,10 @@ export function useKreakloneSession(): KreakloneSessionHook {
         setLaneStatuses((prev) => ({ ...prev, generate: "working" }));
         break;
       case "preview.partial": {
-        const payload = msg.payload as unknown as PreviewFrame;
+        const payload = normalizePreviewFrame(msg.payload as Partial<TimelineFrame> & Partial<PreviewFrame> & { variantId?: string });
+        if (!payload) break;
         setLiveFrames((prev) => {
-          const next = [...prev.filter((frame) => frame.variantId !== payload.variantId), payload];
-          next.sort((a, b) => a.ordinal - b.ordinal);
-          return next;
+          return upsertPreviewFrame(prev, payload);
         });
         setActiveFrame(payload);
         break;
@@ -251,12 +291,10 @@ export function useKreakloneSession(): KreakloneSessionHook {
         setTimeout(() => setLaneStatuses((prev) => ({ ...prev, generate: "idle" })), 1500);
         break;
       case "timeline.frame": {
-        const frame = toPreviewFrame(msg.payload as unknown as TimelineFrame);
+        const frame = normalizePreviewFrame(msg.payload as Partial<TimelineFrame> & Partial<PreviewFrame> & { variantId?: string });
         if (!frame) break;
         setLiveFrames((prev) => {
-          const next = [...prev.filter((entry) => entry.variantId !== frame.variantId), frame];
-          next.sort((a, b) => a.ordinal - b.ordinal);
-          return next;
+          return upsertPreviewFrame(prev, frame);
         });
         setActiveFrame(frame);
         break;
@@ -268,12 +306,15 @@ export function useKreakloneSession(): KreakloneSessionHook {
           assetId: String(payload.assetId),
           uri: String(payload.uri),
         });
-        if (payload.sourceVariantId) {
+        const sourceVariantId = payload.sourceVariantId;
+        if (typeof sourceVariantId === "string" && sourceVariantId.length > 0) {
           setLiveFrames((prev) => prev.map((frame) => (
-            frame.variantId === payload.sourceVariantId ? { ...frame, uri: payload.uri, assetId: payload.assetId } : frame
+            matchesPreviewFrame(frame, sourceVariantId)
+              ? { ...frame, uri: payload.uri, assetId: payload.assetId }
+              : frame
           )));
           setActiveFrame((prev) => (
-            prev && prev.variantId === payload.sourceVariantId
+            prev && matchesPreviewFrame(prev, sourceVariantId)
               ? { ...prev, uri: payload.uri, assetId: payload.assetId }
               : prev
           ));
@@ -289,12 +330,15 @@ export function useKreakloneSession(): KreakloneSessionHook {
           assetId: String(payload.assetId),
           uri: String(payload.uri),
         });
-        if (payload.sourceVariantId) {
+        const sourceVariantId = payload.sourceVariantId;
+        if (typeof sourceVariantId === "string" && sourceVariantId.length > 0) {
           setLiveFrames((prev) => prev.map((frame) => (
-            frame.variantId === payload.sourceVariantId ? { ...frame, uri: payload.uri, assetId: payload.assetId } : frame
+            matchesPreviewFrame(frame, sourceVariantId)
+              ? { ...frame, uri: payload.uri, assetId: payload.assetId }
+              : frame
           )));
           setActiveFrame((prev) => (
-            prev && prev.variantId === payload.sourceVariantId
+            prev && matchesPreviewFrame(prev, sourceVariantId)
               ? { ...prev, uri: payload.uri, assetId: payload.assetId }
               : prev
           ));
@@ -490,7 +534,7 @@ export function useKreakloneSession(): KreakloneSessionHook {
 
   const selectFrame = useCallback((frame: PreviewFrame) => {
     setActiveFrame(frame);
-    sendTimelineSeek(frame.variantId);
+    sendTimelineSeek(getFrameTargetId(frame));
   }, [sendTimelineSeek]);
 
   const requestRefineByFrameId = useCallback(async (frameId: string) => {
@@ -506,7 +550,7 @@ export function useKreakloneSession(): KreakloneSessionHook {
 
   const requestRefine = useCallback(async () => {
     if (!activeFrame) return;
-    await requestRefineByFrameId(activeFrame.variantId);
+    await requestRefineByFrameId(getFrameTargetId(activeFrame));
   }, [activeFrame, requestRefineByFrameId]);
 
   const requestUpscaleByAssetId = useCallback(async (assetId: string) => {

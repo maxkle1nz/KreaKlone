@@ -173,7 +173,7 @@ export function Studio() {
             isGenerating={session.isGenerating}
             sessionState={session.sessionState}
             laneStatuses={session.laneStatuses}
-            requestRefine={() => session.activeFrame ? session.requestRefineByFrameId(session.activeFrame.variantId) : Promise.resolve()}
+            requestRefine={() => session.activeFrame ? session.requestRefineByFrameId(session.activeFrame.frameId ?? session.activeFrame.variantId) : Promise.resolve()}
             requestUpscale={() => session.activeFrame ? session.requestUpscaleByAssetId(session.activeFrame.assetId) : Promise.resolve()}
             selectVariant={session.selectFrame}
             latestRefinedAsset={session.latestRefinedAsset}
