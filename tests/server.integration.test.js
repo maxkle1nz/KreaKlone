@@ -394,6 +394,75 @@ test('timeline management and session settings endpoints mutate session state', 
   }
 });
 
+test('refine and upscale lifecycles publish outputs and persist latest asset ids', async () => {
+  const workerStack = await startWorkerStack();
+  const appStack = await startAppWithWorkers(workerStack);
+
+  try {
+    const sessionResponse = await fetch(`${appStack.baseUrl}/api/sessions`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({})
+    });
+    const sessionPayload = await sessionResponse.json();
+    const sessionId = sessionPayload.session.sessionId;
+
+    const socket = new WebSocket(appStack.baseUrl.replace('http', 'ws') + '/ws');
+    await new Promise((resolve, reject) => {
+      socket.addEventListener('open', resolve, { once: true });
+      socket.addEventListener('error', reject, { once: true });
+    });
+
+    socket.send(JSON.stringify({ type: 'session.join', payload: { sessionId } }));
+    await waitFor(socket, 'session.state', (payload) => payload.sessionId === sessionId);
+
+    socket.send(JSON.stringify({ type: 'preview.request', payload: { sessionId, burstCount: 1 } }));
+    await waitFor(socket, 'preview.completed', (payload) => payload.sessionId === sessionId);
+
+    const previewState = appStack.app.runtime.getSession(sessionId);
+    const frameId = previewState.activeFrameId;
+    const sourceAssetId = previewState.timelineFrames.find((frame) => frame.frameId === frameId)?.assetId;
+    assert.equal(typeof frameId, 'string');
+    assert.equal(typeof sourceAssetId, 'string');
+
+    const refineCompleted = waitFor(socket, 'refine.completed', (payload) => payload.sessionId === sessionId);
+    const refineResponse = await fetch(`${appStack.baseUrl}/api/refine`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ sessionId, variantId: frameId })
+    });
+    assert.equal(refineResponse.status, 202);
+    const refineEvent = await refineCompleted;
+    assert.equal(typeof refineEvent.payload.assetId, 'string');
+    assert.equal(refineEvent.payload.sourceVariantId, frameId);
+
+    const refinedState = appStack.app.runtime.getSession(sessionId);
+    assert.equal(refinedState.latestRefinedAssetId, refineEvent.payload.assetId);
+
+    const upscaleCompleted = waitFor(socket, 'upscale.completed', (payload) => payload.sessionId === sessionId);
+    const upscaleResponse = await fetch(`${appStack.baseUrl}/api/upscale`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ sessionId, assetId: sourceAssetId })
+    });
+    assert.equal(upscaleResponse.status, 202);
+    const upscaleEvent = await upscaleCompleted;
+    assert.equal(typeof upscaleEvent.payload.assetId, 'string');
+    assert.equal(upscaleEvent.payload.sourceVariantId, frameId);
+
+    const upscaledState = appStack.app.runtime.getSession(sessionId);
+    assert.equal(upscaledState.latestUpscaledAssetId, upscaleEvent.payload.assetId);
+
+    await new Promise((resolve) => {
+      socket.addEventListener('close', resolve, { once: true });
+      socket.close();
+    });
+  } finally {
+    await appStack.stop();
+    await workerStack.stop();
+  }
+});
+
 test('websocket recording lifecycle clears session capture state after record.stop', async () => {
   const workerStack = await startWorkerStack();
   const appStack = await startAppWithWorkers(workerStack);
