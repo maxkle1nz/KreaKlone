@@ -394,6 +394,54 @@ test('timeline management and session settings endpoints mutate session state', 
   }
 });
 
+test('websocket recording lifecycle clears session capture state after record.stop', async () => {
+  const workerStack = await startWorkerStack();
+  const appStack = await startAppWithWorkers(workerStack);
+
+  try {
+    const sessionResponse = await fetch(`${appStack.baseUrl}/api/sessions`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({})
+    });
+    const sessionPayload = await sessionResponse.json();
+    const sessionId = sessionPayload.session.sessionId;
+
+    const socket = new WebSocket(appStack.baseUrl.replace('http', 'ws') + '/ws');
+    await new Promise((resolve, reject) => {
+      socket.addEventListener('open', resolve, { once: true });
+      socket.addEventListener('error', reject, { once: true });
+    });
+
+    socket.send(JSON.stringify({ type: 'session.join', payload: { sessionId } }));
+    await waitFor(socket, 'session.state', (payload) => payload.sessionId === sessionId);
+
+    socket.send(JSON.stringify({ type: 'preview.request', payload: { sessionId, burstCount: 1 } }));
+    await waitFor(socket, 'preview.completed', (payload) => payload.sessionId === sessionId);
+
+    const recordCompleted = waitFor(socket, 'record.completed', (payload) => payload.sessionId === sessionId);
+    socket.send(JSON.stringify({ type: 'record.start', payload: { sessionId, source: 'output' } }));
+    const completed = await recordCompleted;
+    assert.equal(typeof completed.payload.assetId, 'string');
+
+    const clearedState = waitFor(
+      socket,
+      'session.state',
+      (payload) => payload.sessionId === sessionId && payload.session.latestRecordingAssetId === undefined,
+    );
+    socket.send(JSON.stringify({ type: 'record.stop', payload: { sessionId } }));
+    await clearedState;
+
+    await new Promise((resolve) => {
+      socket.addEventListener('close', resolve, { once: true });
+      socket.close();
+    });
+  } finally {
+    await appStack.stop();
+    await workerStack.stop();
+  }
+});
+
 test('app server can serve an alternate static web root for web-v2 style deployments', async () => {
   const fixtureRoot = await mkdtemp(join(tmpdir(), 'kreaklone-web-root-'));
   await mkdir(join(fixtureRoot, 'assets'));
