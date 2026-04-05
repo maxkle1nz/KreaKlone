@@ -1,12 +1,14 @@
 import { createServer as createHttpServer } from 'node:http';
-import { readFile } from 'node:fs/promises';
+import { access, readFile } from 'node:fs/promises';
+import { constants } from 'node:fs';
 import { extname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createMvpRuntime } from '../../../packages/orchestration/src/index.js';
 import { attachWebSocketServer } from '../../../packages/orchestration/src/websocket-server.js';
 import { WorkerClients } from '../../../packages/orchestration/src/worker-clients.js';
 
-const WEB_ROOT = fileURLToPath(new URL('../../web', import.meta.url));
+const LEGACY_WEB_ROOT = fileURLToPath(new URL('../../web', import.meta.url));
+const WEB_V2_ROOT = fileURLToPath(new URL('../../web-v2/dist', import.meta.url));
 const MIME_TYPES = {
   '.css': 'text/css; charset=utf-8',
   '.html': 'text/html; charset=utf-8',
@@ -14,6 +16,19 @@ const MIME_TYPES = {
   '.json': 'application/json; charset=utf-8',
   '.svg': 'image/svg+xml; charset=utf-8'
 };
+
+async function resolveWebRoot() {
+  if (process.env.WEB_APP_VARIANT !== 'v2') {
+    return LEGACY_WEB_ROOT;
+  }
+
+  try {
+    await access(join(WEB_V2_ROOT, 'index.html'), constants.R_OK);
+    return WEB_V2_ROOT;
+  } catch {
+    throw new Error('WEB_APP_VARIANT=v2 requires a built apps/web-v2/dist bundle. Run `npm run build:web-v2` first.');
+  }
+}
 
 function json(response, statusCode, body) {
   response.writeHead(statusCode, { 'content-type': 'application/json; charset=utf-8' });
@@ -37,10 +52,10 @@ async function readJsonBody(request) {
   return JSON.parse(Buffer.concat(chunks).toString('utf8'));
 }
 
-async function serveStatic(request, response) {
+async function serveStatic(request, response, webRoot) {
   const requestPath = request.url === '/' ? '/index.html' : request.url;
   const safePath = requestPath.replace(/\.\.+/g, '');
-  const filePath = join(WEB_ROOT, safePath);
+  const filePath = join(webRoot, safePath);
   const content = await readFile(filePath);
   response.writeHead(200, { 'content-type': MIME_TYPES[extname(filePath)] ?? 'text/plain; charset=utf-8' });
   response.end(content);
@@ -49,6 +64,7 @@ async function serveStatic(request, response) {
 export function createAppServer(options = {}) {
   const port = options.port ?? Number.parseInt(process.env.PORT ?? '3000', 10);
   const host = options.host ?? process.env.HOST ?? '127.0.0.1';
+  const webRoot = options.webRoot ?? null;
   let runtime = options.runtime;
 
   function getRuntime() {
@@ -160,7 +176,7 @@ export function createAppServer(options = {}) {
       }
 
       if (request.method === 'GET') {
-        await serveStatic(request, response);
+        await serveStatic(request, response, webRoot ?? await resolveWebRoot());
         return;
       }
 

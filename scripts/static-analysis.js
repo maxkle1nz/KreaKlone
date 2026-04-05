@@ -2,12 +2,16 @@ import { readFile, readdir, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 
 const roots = ['apps', 'packages', 'preview-worker', 'refine-worker', 'tests', 'upscale-worker'];
+const skipDirectories = new Set(['node_modules', 'dist', '.git']);
 const findings = [];
 
 async function scan(directory) {
   for (const entry of await readdir(directory, { withFileTypes: true })) {
     const target = join(directory, entry.name);
     if (entry.isDirectory()) {
+      if (skipDirectories.has(entry.name)) {
+        continue;
+      }
       await scan(target);
       continue;
     }

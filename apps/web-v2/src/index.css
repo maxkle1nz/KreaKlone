@@ -1,5 +1,3 @@
-@import "tailwindcss";
-
 /* =============================================
    YLIMIT — Minimal ZEN Instrument
    ============================================= */
@@ -3635,4 +3633,3 @@ html, body, #root {
   object-fit: cover;
   display: block;
 }
-

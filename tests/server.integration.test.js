@@ -1,5 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdtemp, mkdir, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { createAppServer } from '../apps/server/src/server.js';
 import { createRealPreviewProvider, createWorkerService } from '../packages/deployment/src/index.js';
 import { previewWorkerManifest } from '../preview-worker/index.js';
@@ -388,5 +391,38 @@ test('timeline management and session settings endpoints mutate session state', 
   } finally {
     await appStack.stop();
     await workerStack.stop();
+  }
+});
+
+test('app server can serve an alternate static web root for web-v2 style deployments', async () => {
+  const fixtureRoot = await mkdtemp(join(tmpdir(), 'kreaklone-web-root-'));
+  await mkdir(join(fixtureRoot, 'assets'));
+  await writeFile(
+    join(fixtureRoot, 'index.html'),
+    '<!doctype html><html><body><div id="root">web-v2 fixture</div><script type="module" src="/assets/app.js"></script></body></html>',
+    'utf8'
+  );
+  await writeFile(join(fixtureRoot, 'assets', 'app.js'), 'window.__fixtureLoaded = true;', 'utf8');
+
+  const app = createAppServer({
+    port: 0,
+    host: '127.0.0.1',
+    webRoot: fixtureRoot
+  });
+  const baseUrl = await app.start();
+
+  try {
+    const indexResponse = await fetch(`${baseUrl}/`);
+    const indexHtml = await indexResponse.text();
+    assert.equal(indexResponse.status, 200);
+    assert.match(indexHtml, /web-v2 fixture/);
+    assert.match(indexHtml, /\/assets\/app\.js/);
+
+    const assetResponse = await fetch(`${baseUrl}/assets/app.js`);
+    const assetSource = await assetResponse.text();
+    assert.equal(assetResponse.status, 200);
+    assert.match(assetSource, /fixtureLoaded/);
+  } finally {
+    await app.stop();
   }
 });

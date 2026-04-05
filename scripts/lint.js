@@ -3,6 +3,7 @@ import { extname, join } from 'node:path';
 
 const ROOTS = ['app', 'apps', 'benchmarks', 'packages', 'preview-worker', 'redis', 'refine-worker', 'scripts', 'tests', 'upscale-worker'];
 const ALLOWED_EXTENSIONS = new Set(['.js', '.md', '.css', '.html', '.json', '.yml', '.yaml', '.conf']);
+const SKIP_DIRECTORIES = new Set(['node_modules', 'dist', '.git']);
 const violations = [];
 
 async function walk(directory) {
@@ -10,6 +11,9 @@ async function walk(directory) {
   for (const entry of entries) {
     const location = join(directory, entry.name);
     if (entry.isDirectory()) {
+      if (SKIP_DIRECTORIES.has(entry.name)) {
+        continue;
+      }
       await walk(location);
       continue;
     }

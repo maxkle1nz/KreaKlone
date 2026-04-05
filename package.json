@@ -5,9 +5,13 @@
   "type": "module",
   "scripts": {
     "dev": "node apps/server/src/server.js",
+    "dev:web-v2": "npm run dev --prefix apps/web-v2",
     "dev:preview-worker": "node preview-worker/index.js",
     "dev:refine-worker": "node refine-worker/index.js",
     "dev:upscale-worker": "node upscale-worker/index.js",
+    "build:web-v2": "npm run build --prefix apps/web-v2",
+    "preview:web-v2": "npm run preview --prefix apps/web-v2",
+    "serve:web-v2": "WEB_APP_VARIANT=v2 node apps/server/src/server.js",
     "lint": "node scripts/lint.js",
     "typecheck": "node scripts/typecheck.js",
     "static-analysis": "node scripts/static-analysis.js",
