@@ -5,7 +5,7 @@ const BURST_OPTIONS = [1, 2, 4, 8, 16];
 
 type LiveOutputProps = Pick<
   YlimitSessionHook,
-  "liveVariants" | "activeVariant" | "isGenerating" | "sessionState" | "laneStatuses" | "requestRefine" | "requestUpscale" | "selectVariant"
+  "liveVariants" | "activeVariant" | "isGenerating" | "sessionState" | "laneStatuses" | "requestRefine" | "requestUpscale" | "selectVariant" | "latestRefinedAsset" | "latestUpscaledAsset"
 > & {
   burstCount: number;
   setBurstCount: (n: number) => void;
@@ -63,6 +63,8 @@ export function LiveOutput({
   requestRefine,
   requestUpscale,
   selectVariant,
+  latestRefinedAsset,
+  latestUpscaledAsset,
   burstCount,
   setBurstCount,
   composerPreviewUri,
@@ -73,6 +75,13 @@ export function LiveOutput({
   const selectFrame = selectVariant;
   const displayUri = composerPreviewUri ?? activeVariant?.uri ?? null;
   const frameCount = sessionState?.timelineFrames?.length ?? 0;
+
+  const downloadAsset = (assetId: string, uri: string, kind: string) => {
+    const link = document.createElement("a");
+    link.href = uri;
+    link.download = `ylimit_${kind}_${assetId}.svg`;
+    link.click();
+  };
 
   return (
     <div className="yl-live-output">
@@ -118,6 +127,24 @@ export function LiveOutput({
             >
               Scale
             </button>
+            {latestRefinedAsset && (
+              <button
+                className="yl-action-pill"
+                onClick={() => downloadAsset(latestRefinedAsset.assetId, latestRefinedAsset.uri, "refine")}
+                title="Download the latest refined output"
+              >
+                Save Refine
+              </button>
+            )}
+            {latestUpscaledAsset && (
+              <button
+                className="yl-action-pill"
+                onClick={() => downloadAsset(latestUpscaledAsset.assetId, latestUpscaledAsset.uri, "upscale")}
+                title="Download the latest upscaled output"
+              >
+                Save Scale
+              </button>
+            )}
           </div>
         )}
       </div>

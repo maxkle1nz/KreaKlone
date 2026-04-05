@@ -176,6 +176,8 @@ export function Studio() {
             requestRefine={() => session.activeFrame ? session.requestRefineByFrameId(session.activeFrame.variantId) : Promise.resolve()}
             requestUpscale={() => session.activeFrame ? session.requestUpscaleByAssetId(session.activeFrame.assetId) : Promise.resolve()}
             selectVariant={session.selectFrame}
+            latestRefinedAsset={session.latestRefinedAsset}
+            latestUpscaledAsset={session.latestUpscaledAsset}
             burstCount={frameBudget}
             setBurstCount={setFrameBudget}
             composerPreviewUri={null}

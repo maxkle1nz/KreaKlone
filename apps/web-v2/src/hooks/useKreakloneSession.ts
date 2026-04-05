@@ -73,6 +73,8 @@ export type KreakloneSessionHook = {
   liveFrames: PreviewFrame[];
   activeVariant: PreviewFrame | null;
   activeFrame: PreviewFrame | null;
+  latestRefinedAsset: SessionAsset | null;
+  latestUpscaledAsset: SessionAsset | null;
   latestRecordingAsset: SessionAsset | null;
   isGenerating: boolean;
   lastError: string | null;
@@ -130,6 +132,8 @@ export function useKreakloneSession(): KreakloneSessionHook {
   const [sessionState, setSessionState] = useState<SessionState | null>(null);
   const [liveFrames, setLiveFrames] = useState<PreviewFrame[]>([]);
   const [activeFrame, setActiveFrame] = useState<PreviewFrame | null>(null);
+  const [latestRefinedAsset, setLatestRefinedAsset] = useState<SessionAsset | null>(null);
+  const [latestUpscaledAsset, setLatestUpscaledAsset] = useState<SessionAsset | null>(null);
   const [latestRecordingAsset, setLatestRecordingAsset] = useState<SessionAsset | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [lastError, setLastError] = useState<string | null>(null);
@@ -144,6 +148,8 @@ export function useKreakloneSession(): KreakloneSessionHook {
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reconnectDelay = useRef(MIN_RECONNECT_MS);
   const isMounted = useRef(true);
+  const latestRefinedAssetIdRef = useRef<string | null>(null);
+  const latestUpscaledAssetIdRef = useRef<string | null>(null);
   const latestRecordingAssetIdRef = useRef<string | null>(null);
 
   const send = useCallback((msg: object) => {
@@ -186,6 +192,30 @@ export function useKreakloneSession(): KreakloneSessionHook {
           }
         }
         const nextRecordingAssetId = session.latestRecordingAssetId ?? null;
+        const nextRefinedAssetId = session.latestRefinedAssetId ?? null;
+        const nextUpscaledAssetId = session.latestUpscaledAssetId ?? null;
+        if (nextRefinedAssetId && nextRefinedAssetId !== latestRefinedAssetIdRef.current) {
+          latestRefinedAssetIdRef.current = nextRefinedAssetId;
+          loadAsset(nextRefinedAssetId)
+            .then((asset) => {
+              if (isMounted.current) setLatestRefinedAsset(asset);
+            })
+            .catch(() => {});
+        } else if (!nextRefinedAssetId) {
+          latestRefinedAssetIdRef.current = null;
+          setLatestRefinedAsset(null);
+        }
+        if (nextUpscaledAssetId && nextUpscaledAssetId !== latestUpscaledAssetIdRef.current) {
+          latestUpscaledAssetIdRef.current = nextUpscaledAssetId;
+          loadAsset(nextUpscaledAssetId)
+            .then((asset) => {
+              if (isMounted.current) setLatestUpscaledAsset(asset);
+            })
+            .catch(() => {});
+        } else if (!nextUpscaledAssetId) {
+          latestUpscaledAssetIdRef.current = null;
+          setLatestUpscaledAsset(null);
+        }
         if (nextRecordingAssetId && nextRecordingAssetId !== latestRecordingAssetIdRef.current) {
           latestRecordingAssetIdRef.current = nextRecordingAssetId;
           loadAsset(nextRecordingAssetId)
@@ -233,6 +263,11 @@ export function useKreakloneSession(): KreakloneSessionHook {
       }
       case "refine.completed": {
         const payload = msg.payload as { assetId: string; uri: string; sourceVariantId?: string };
+        latestRefinedAssetIdRef.current = String(payload.assetId);
+        setLatestRefinedAsset({
+          assetId: String(payload.assetId),
+          uri: String(payload.uri),
+        });
         if (payload.sourceVariantId) {
           setLiveFrames((prev) => prev.map((frame) => (
             frame.variantId === payload.sourceVariantId ? { ...frame, uri: payload.uri, assetId: payload.assetId } : frame
@@ -249,6 +284,11 @@ export function useKreakloneSession(): KreakloneSessionHook {
       }
       case "upscale.completed": {
         const payload = msg.payload as { assetId: string; uri: string; sourceVariantId?: string };
+        latestUpscaledAssetIdRef.current = String(payload.assetId);
+        setLatestUpscaledAsset({
+          assetId: String(payload.assetId),
+          uri: String(payload.uri),
+        });
         if (payload.sourceVariantId) {
           setLiveFrames((prev) => prev.map((frame) => (
             frame.variantId === payload.sourceVariantId ? { ...frame, uri: payload.uri, assetId: payload.assetId } : frame
@@ -493,6 +533,8 @@ export function useKreakloneSession(): KreakloneSessionHook {
     liveFrames,
     activeVariant: activeFrame,
     activeFrame,
+    latestRefinedAsset,
+    latestUpscaledAsset,
     latestRecordingAsset,
     isGenerating,
     lastError,
