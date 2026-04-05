@@ -1,5 +1,5 @@
 import type React from "react";
-import type { PreviewVariant, YlimitSessionHook, LaneStatus } from "@/hooks/useYlimitSession";
+import type { PreviewVariant, SessionAsset, YlimitSessionHook, LaneStatus } from "@/hooks/useYlimitSession";
 
 const BURST_OPTIONS = [1, 2, 4, 8, 16];
 
@@ -31,6 +31,15 @@ function LaneBadge({ label, status }: { label: string; status: LaneStatus }) {
       </span>
     </div>
   );
+}
+
+function fileExtensionForAsset(asset: SessionAsset): string {
+  if (asset.mimeType === "image/png") return "png";
+  if (asset.mimeType === "image/jpeg") return "jpg";
+  if (asset.mimeType === "image/webp") return "webp";
+  if (asset.mimeType === "video/webm") return "webm";
+  if (asset.mimeType === "image/svg+xml") return "svg";
+  return "bin";
 }
 
 function FrameThumb({
@@ -76,10 +85,10 @@ export function LiveOutput({
   const displayUri = composerPreviewUri ?? activeVariant?.uri ?? null;
   const frameCount = sessionState?.timelineFrames?.length ?? 0;
 
-  const downloadAsset = (assetId: string, uri: string, kind: string) => {
+  const downloadAsset = (asset: SessionAsset, kind: string) => {
     const link = document.createElement("a");
-    link.href = uri;
-    link.download = `ylimit_${kind}_${assetId}.svg`;
+    link.href = asset.uri;
+    link.download = `ylimit_${kind}_${asset.assetId}.${fileExtensionForAsset(asset)}`;
     link.click();
   };
 
@@ -130,7 +139,7 @@ export function LiveOutput({
             {latestRefinedAsset && (
               <button
                 className="yl-action-pill"
-                onClick={() => downloadAsset(latestRefinedAsset.assetId, latestRefinedAsset.uri, "refine")}
+                onClick={() => downloadAsset(latestRefinedAsset, "refine")}
                 title="Download the latest refined output"
               >
                 Save Refine
@@ -139,7 +148,7 @@ export function LiveOutput({
             {latestUpscaledAsset && (
               <button
                 className="yl-action-pill"
-                onClick={() => downloadAsset(latestUpscaledAsset.assetId, latestUpscaledAsset.uri, "upscale")}
+                onClick={() => downloadAsset(latestUpscaledAsset, "upscale")}
                 title="Download the latest upscaled output"
               >
                 Save Scale

@@ -189,6 +189,8 @@ export function Studio() {
         <PromptBar
           status={session.status}
           isGenerating={session.isGenerating}
+          prompt={session.sessionState?.prompt ?? null}
+          lastError={session.lastError}
           sendPromptUpdate={session.sendPromptUpdate}
           sendGenerate={triggerGenerate}
           sendCancel={session.sendCancel}

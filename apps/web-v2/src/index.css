@@ -809,6 +809,17 @@ html, body, #root {
 
 .yl-neg-row { padding-left: 25px; }
 
+.yl-prompt-status {
+  padding-left: 25px;
+  font-size: 10px;
+  font-family: var(--yl-mono);
+  letter-spacing: 0.04em;
+}
+
+.yl-prompt-status-error {
+  color: #ef4444;
+}
+
 .yl-debounce-ring {
   flex-shrink: 0;
   display: flex;

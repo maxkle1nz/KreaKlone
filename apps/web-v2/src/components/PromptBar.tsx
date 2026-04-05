@@ -4,6 +4,8 @@ import type { YlimitSessionHook } from "@/hooks/useYlimitSession";
 type PromptBarProps = {
   status: YlimitSessionHook["status"];
   isGenerating: boolean;
+  prompt: { positive: string; negative: string } | null;
+  lastError: string | null;
   sendPromptUpdate: YlimitSessionHook["sendPromptUpdate"];
   sendGenerate: YlimitSessionHook["sendGenerate"];
   sendCancel: YlimitSessionHook["sendCancel"];
@@ -16,6 +18,8 @@ type PromptBarProps = {
 export function PromptBar({
   status,
   isGenerating,
+  prompt,
+  lastError,
   sendPromptUpdate,
   sendGenerate,
   sendCancel,
@@ -29,6 +33,28 @@ export function PromptBar({
   const [negative, setNegative] = useState("blurry, low quality, watermark");
   const [showNeg, setShowNeg] = useState(false);
   const syncTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastServerPrompt = useRef<{ positive: string; negative: string } | null>(null);
+
+  useEffect(() => {
+    if (!prompt) return;
+    const nextPrompt = {
+      positive: prompt.positive ?? "",
+      negative: prompt.negative ?? "",
+    };
+    const previousServerPrompt = lastServerPrompt.current;
+    lastServerPrompt.current = nextPrompt;
+    const localMatchesPreviousServer = !previousServerPrompt
+      || (positive === previousServerPrompt.positive && negative === previousServerPrompt.negative);
+    if (syncTimer.current && !localMatchesPreviousServer) {
+      return;
+    }
+    if (positive !== nextPrompt.positive) {
+      setPositive(nextPrompt.positive);
+    }
+    if (negative !== nextPrompt.negative) {
+      setNegative(nextPrompt.negative);
+    }
+  }, [negative, positive, prompt?.negative, prompt?.positive]);
 
   const syncPrompt = useCallback(
     (pos: string, neg: string) => {
@@ -105,6 +131,12 @@ export function PromptBar({
             placeholder="Negative: what to avoid…"
             onChange={(e) => { setNegative(e.target.value); syncPrompt(positive, e.target.value); }}
           />
+        </div>
+      )}
+
+      {lastError && (
+        <div className="yl-prompt-status yl-prompt-status-error" role="status">
+          {lastError}
         </div>
       )}
     </div>
