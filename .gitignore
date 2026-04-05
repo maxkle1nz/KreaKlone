@@ -21,3 +21,5 @@
 .codex/skills/.system/
 
 .DS_Store
+
+apps/web-v2/node_modules

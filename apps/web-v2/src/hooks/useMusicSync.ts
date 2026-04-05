@@ -634,8 +634,8 @@ export function useMusicSync(): MusicSyncHook {
   const getFrequencyBands = useCallback((): FrequencyBands => {
     const analyser = analyserNodeRef.current;
     if (!analyser) return { bass: 0, mid: 0, treble: 0 };
-    analyser.getByteFrequencyData(fftDataRef.current);
-    const data = fftDataRef.current;
+    const data = new Uint8Array(fftDataRef.current.buffer, fftDataRef.current.byteOffset, fftDataRef.current.byteLength);
+    analyser.getByteFrequencyData(data as unknown as Uint8Array<ArrayBuffer>);
     const len = data.length;
     /* Bin ranges: bass 0–4, mid 5–20, treble 21–60 */
     const avg = (lo: number, hi: number) => {

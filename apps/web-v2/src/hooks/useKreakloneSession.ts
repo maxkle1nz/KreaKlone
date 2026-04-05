@@ -58,7 +58,9 @@ export type KreakloneSessionHook = {
   status: ConnectionStatus;
   sessionId: string | null;
   sessionState: SessionState | null;
+  liveVariants: PreviewFrame[];
   liveFrames: PreviewFrame[];
+  activeVariant: PreviewFrame | null;
   activeFrame: PreviewFrame | null;
   isGenerating: boolean;
   lastError: string | null;
@@ -78,7 +80,10 @@ export type KreakloneSessionHook = {
   deleteFrame: (frameId: string) => void;
   setFrameCapacity: (n: number) => void;
   selectFrame: (frame: PreviewFrame) => void;
+  selectVariant: (frame: PreviewFrame) => void;
+  requestRefine: () => Promise<void>;
   requestRefineByFrameId: (frameId: string) => Promise<void>;
+  requestUpscale: () => Promise<void>;
   requestUpscaleByAssetId: (assetId: string) => Promise<void>;
 };
 
@@ -371,6 +376,11 @@ export function useKreakloneSession(): KreakloneSessionHook {
     if (!res.ok) throw new Error(`Refine failed: ${res.status}`);
   }, []);
 
+  const requestRefine = useCallback(async () => {
+    if (!activeFrame) return;
+    await requestRefineByFrameId(activeFrame.variantId);
+  }, [activeFrame, requestRefineByFrameId]);
+
   const requestUpscaleByAssetId = useCallback(async (assetId: string) => {
     if (!sessionIdRef.current) return;
     setLaneStatuses((prev) => ({ ...prev, upscale: "working" }));
@@ -382,11 +392,18 @@ export function useKreakloneSession(): KreakloneSessionHook {
     if (!res.ok) throw new Error(`Upscale failed: ${res.status}`);
   }, []);
 
+  const requestUpscale = useCallback(async () => {
+    if (!activeFrame) return;
+    await requestUpscaleByAssetId(activeFrame.assetId);
+  }, [activeFrame, requestUpscaleByAssetId]);
+
   return {
     status,
     sessionId,
     sessionState,
+    liveVariants: liveFrames,
     liveFrames,
+    activeVariant: activeFrame,
     activeFrame,
     isGenerating,
     lastError,
@@ -406,7 +423,10 @@ export function useKreakloneSession(): KreakloneSessionHook {
     deleteFrame,
     setFrameCapacity,
     selectFrame,
+    selectVariant: selectFrame,
+    requestRefine,
     requestRefineByFrameId,
+    requestUpscale,
     requestUpscaleByAssetId,
   };
 }
