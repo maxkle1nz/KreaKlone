@@ -253,12 +253,18 @@ export function useKreakloneSession(): KreakloneSessionHook {
         setLastError(null);
         break;
       case "job.failed":
-        setIsGenerating(false);
-        setLastError((msg.payload as { error?: string }).error ?? "Job failed");
-        setLaneStatuses((prev) => ({
-          ...prev,
-          [queueToLane((msg.payload as { queue?: string }).queue)]: "error",
-        }));
+        {
+          const queue = (msg.payload as { queue?: string }).queue;
+          const lane = queueToLane(queue);
+          if (lane === "generate") {
+            setIsGenerating(false);
+          }
+          setLastError((msg.payload as { error?: string }).error ?? "Job failed");
+          setLaneStatuses((prev) => ({
+            ...prev,
+            [lane]: "error",
+          }));
+        }
         break;
       default:
         break;
