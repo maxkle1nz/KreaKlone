@@ -107,6 +107,12 @@ function buildWsUrl(): string {
 const MIN_RECONNECT_MS = 500;
 const MAX_RECONNECT_MS = 30_000;
 
+function queueToLane(queue: unknown): keyof LaneStatuses {
+  if (queue === "refine") return "enhance";
+  if (queue === "upscale") return "upscale";
+  return "generate";
+}
+
 function toPreviewFrame(frame: TimelineFrame): PreviewFrame | null {
   if (!frame.uri) return null;
   return {
@@ -249,7 +255,10 @@ export function useKreakloneSession(): KreakloneSessionHook {
       case "job.failed":
         setIsGenerating(false);
         setLastError((msg.payload as { error?: string }).error ?? "Job failed");
-        setLaneStatuses((prev) => ({ ...prev, generate: "error" }));
+        setLaneStatuses((prev) => ({
+          ...prev,
+          [queueToLane((msg.payload as { queue?: string }).queue)]: "error",
+        }));
         break;
       default:
         break;
