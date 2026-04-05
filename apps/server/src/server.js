@@ -182,6 +182,13 @@ export function createAppServer(options = {}) {
         return;
       }
 
+      if (request.method === 'POST' && request.url === '/api/preview/cancel') {
+        const body = await readJsonBody(request);
+        const canceled = getRuntime().cancelQueues(body.sessionId, body.queue ?? 'all', 'client requested cancellation');
+        json(response, 200, { canceled });
+        return;
+      }
+
       if (request.method === 'GET') {
         await serveStatic(request, response, webRoot ?? await resolveWebRoot());
         return;

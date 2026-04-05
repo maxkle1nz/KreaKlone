@@ -4,6 +4,7 @@ import { mkdtemp, mkdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createAppServer } from '../apps/server/src/server.js';
+import { createMvpRuntime } from '../packages/orchestration/src/index.js';
 import { createRealPreviewProvider, createWorkerService } from '../packages/deployment/src/index.js';
 import { previewWorkerManifest } from '../preview-worker/index.js';
 import { refineWorkerManifest } from '../refine-worker/index.js';
@@ -101,6 +102,23 @@ async function startAppWithWorkers(workerStack) {
   };
 }
 
+async function startAppWithRuntime(runtime) {
+  const app = createAppServer({
+    port: 0,
+    host: '127.0.0.1',
+    runtime
+  });
+  const baseUrl = await app.start();
+
+  return {
+    app,
+    baseUrl,
+    async stop() {
+      await app.stop();
+    }
+  };
+}
+
 test('http + websocket scaffold supports session join and progressive previews', async () => {
   const workerStack = await startWorkerStack();
   const appStack = await startAppWithWorkers(workerStack);
@@ -157,6 +175,65 @@ test('http + websocket scaffold supports session join and progressive previews',
   } finally {
     await appStack.stop();
     await workerStack.stop();
+  }
+});
+
+test('preview cancel endpoint stops in-flight preview work over the public HTTP surface', async () => {
+  const runtime = createMvpRuntime({ previewStepMs: 40, refineStepMs: 5, upscaleStepMs: 5 });
+  const appStack = await startAppWithRuntime(runtime);
+
+  try {
+    const sessionResponse = await fetch(`${appStack.baseUrl}/api/sessions`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({})
+    });
+    const sessionPayload = await sessionResponse.json();
+    const sessionId = sessionPayload.session.sessionId;
+
+    const socket = new WebSocket(appStack.baseUrl.replace('http', 'ws') + '/ws');
+    await new Promise((resolve, reject) => {
+      socket.addEventListener('open', resolve, { once: true });
+      socket.addEventListener('error', reject, { once: true });
+    });
+
+    socket.send(JSON.stringify({ type: 'session.join', payload: { sessionId } }));
+    await waitFor(socket, 'session.state', (payload) => payload.sessionId === sessionId);
+
+    const previewStarted = waitFor(socket, 'preview.started', (payload) => payload.sessionId === sessionId);
+    const firstPartial = waitFor(socket, 'preview.partial', (payload) => payload.sessionId === sessionId);
+    const previewResponse = await fetch(`${appStack.baseUrl}/api/preview`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ sessionId, burstCount: 4 })
+    });
+    assert.equal(previewResponse.status, 202);
+    await previewStarted;
+    await firstPartial;
+
+    const canceledEvent = waitFor(socket, 'job.canceled', (payload) => payload.sessionId === sessionId);
+    const cancelResponse = await fetch(`${appStack.baseUrl}/api/preview/cancel`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ sessionId, queue: 'preview' })
+    });
+    const cancelPayload = await cancelResponse.json();
+    assert.equal(cancelResponse.status, 200);
+    assert.ok(Array.isArray(cancelPayload.canceled));
+    assert.ok(cancelPayload.canceled.length >= 1);
+    const canceled = await canceledEvent;
+    assert.match(canceled.payload.reason, /client requested cancellation/);
+
+    await runtime.queues.previewQueue.waitForIdle();
+    const currentSession = runtime.getSession(sessionId);
+    assert.ok(currentSession.timelineFrames.length >= 1 && currentSession.timelineFrames.length < 4);
+
+    await new Promise((resolve) => {
+      socket.addEventListener('close', resolve, { once: true });
+      socket.close();
+    });
+  } finally {
+    await appStack.stop();
   }
 });
 
