@@ -45,6 +45,9 @@ export function applyCanvasEvent(state, canvasEvent) {
     activeFrameId: state.activeFrameId,
     timelineFrames: [...state.timelineFrames],
     loopRange: state.loopRange,
+    latestRefinedAssetId: undefined,
+    latestUpscaledAssetId: undefined,
+    latestRecordingAssetId: undefined,
     updatedAt: new Date().toISOString(),
     lastEventType: canvasEvent.type
   };
@@ -111,6 +114,9 @@ export function appendTimelineFrame(state, frame) {
   return {
     ...state,
     activeFrameId: frame.frameId,
+    latestRefinedAssetId: undefined,
+    latestUpscaledAssetId: undefined,
+    latestRecordingAssetId: undefined,
     timelineFrames: [...pinned, ...nextUnpinned],
     updatedAt: new Date().toISOString()
   };

@@ -113,6 +113,43 @@ test('timeline capacity trims old unpinned frames while preserving pinned frames
   assert.equal(finalSession.timelineFrames.length, 8);
 });
 
+test('new edits and new preview frames clear stale refine/upscale/recording artifacts', async () => {
+  const runtime = createMvpRuntime({ previewStepMs: 5, refineStepMs: 5, upscaleStepMs: 5 });
+  const { session } = runtime.createSession('session_artifact_reset');
+  runtime.joinSession(session.sessionId, { send() {} });
+
+  runtime.requestPreview(session.sessionId, { burstCount: 1 });
+  await runtime.queues.previewQueue.waitForIdle();
+
+  const firstSession = runtime.getSession(session.sessionId);
+  const frameId = firstSession.activeFrameId;
+  const assetId = firstSession.timelineFrames[0].assetId;
+
+  runtime.requestRefine(session.sessionId, frameId);
+  await runtime.queues.refineQueue.waitForIdle();
+  runtime.requestUpscale(session.sessionId, assetId);
+  await runtime.queues.upscaleQueue.waitForIdle();
+  runtime.requestRecord(session.sessionId, 'output');
+
+  const enrichedSession = runtime.getSession(session.sessionId);
+  assert.equal(typeof enrichedSession.latestRefinedAssetId, 'string');
+  assert.equal(typeof enrichedSession.latestUpscaledAssetId, 'string');
+  assert.equal(typeof enrichedSession.latestRecordingAssetId, 'string');
+
+  runtime.applyCanvasEvent(session.sessionId, { type: 'prompt.update', positive: 'new scene', negative: '' });
+  const resetByEdit = runtime.getSession(session.sessionId);
+  assert.equal(resetByEdit.latestRefinedAssetId, undefined);
+  assert.equal(resetByEdit.latestUpscaledAssetId, undefined);
+  assert.equal(resetByEdit.latestRecordingAssetId, undefined);
+
+  runtime.requestPreview(session.sessionId, { burstCount: 1 });
+  await runtime.queues.previewQueue.waitForIdle();
+  const resetByPreview = runtime.getSession(session.sessionId);
+  assert.equal(resetByPreview.latestRefinedAssetId, undefined);
+  assert.equal(resetByPreview.latestUpscaledAssetId, undefined);
+  assert.equal(resetByPreview.latestRecordingAssetId, undefined);
+});
+
 test('runtime maps worker preview variants by ordinal and preserves worker metadata', async () => {
   const runtime = createMvpRuntime({
     workerClients: {
