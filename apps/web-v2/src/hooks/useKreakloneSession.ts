@@ -257,6 +257,38 @@ export function useKreakloneSession(): KreakloneSessionHook {
       [lane]: "error",
     }));
   }, []);
+  const hydrateLatestAsset = useCallback(({
+    assetId,
+    assetIdRef,
+    setAsset,
+    errorLabel,
+    lane,
+  }: {
+    assetId: string;
+    assetIdRef: { current: string | null };
+    setAsset: (asset: SessionAsset | null) => void;
+    errorLabel: string;
+    lane?: keyof LaneStatuses;
+  }) => {
+    assetIdRef.current = assetId;
+    loadAsset(assetId)
+      .then((asset) => {
+        if (!isMounted.current || assetIdRef.current !== assetId) return;
+        setAsset(asset);
+      })
+      .catch((error) => {
+        if (!isMounted.current || assetIdRef.current !== assetId) return;
+        setAsset(null);
+        if (lane) {
+          setLaneStatuses((prev) => ({
+            ...prev,
+            [lane]: "error",
+          }));
+        }
+        const message = error instanceof Error ? error.message : "Asset fetch failed";
+        setLastError(`${errorLabel}: ${message}`);
+      });
+  }, [loadAsset]);
 
   const handleServerMessage = useCallback((msg: { type: string; payload: Record<string, unknown> }) => {
     switch (msg.type) {
@@ -280,36 +312,36 @@ export function useKreakloneSession(): KreakloneSessionHook {
         const nextRefinedAssetId = session.latestRefinedAssetId ?? null;
         const nextUpscaledAssetId = session.latestUpscaledAssetId ?? null;
         if (nextRefinedAssetId && nextRefinedAssetId !== latestRefinedAssetIdRef.current) {
-          latestRefinedAssetIdRef.current = nextRefinedAssetId;
-          loadAsset(nextRefinedAssetId)
-            .then((asset) => {
-              if (isMounted.current) setLatestRefinedAsset(asset);
-            })
-            .catch(() => {});
+          hydrateLatestAsset({
+            assetId: nextRefinedAssetId,
+            assetIdRef: latestRefinedAssetIdRef,
+            setAsset: setLatestRefinedAsset,
+            errorLabel: "Failed to reload refine asset",
+            lane: "enhance",
+          });
         } else if (!nextRefinedAssetId) {
           latestRefinedAssetIdRef.current = null;
           setLatestRefinedAsset(null);
         }
         if (nextUpscaledAssetId && nextUpscaledAssetId !== latestUpscaledAssetIdRef.current) {
-          latestUpscaledAssetIdRef.current = nextUpscaledAssetId;
-          loadAsset(nextUpscaledAssetId)
-            .then((asset) => {
-              if (isMounted.current) setLatestUpscaledAsset(asset);
-            })
-            .catch(() => {});
+          hydrateLatestAsset({
+            assetId: nextUpscaledAssetId,
+            assetIdRef: latestUpscaledAssetIdRef,
+            setAsset: setLatestUpscaledAsset,
+            errorLabel: "Failed to reload upscale asset",
+            lane: "upscale",
+          });
         } else if (!nextUpscaledAssetId) {
           latestUpscaledAssetIdRef.current = null;
           setLatestUpscaledAsset(null);
         }
         if (nextRecordingAssetId && nextRecordingAssetId !== latestRecordingAssetIdRef.current) {
-          latestRecordingAssetIdRef.current = nextRecordingAssetId;
-          loadAsset(nextRecordingAssetId)
-            .then((asset) => {
-              if (isMounted.current) setLatestRecordingAsset(asset);
-            })
-            .catch(() => {
-              // ignore recording asset fetch failures in the integration lane
-            });
+          hydrateLatestAsset({
+            assetId: nextRecordingAssetId,
+            assetIdRef: latestRecordingAssetIdRef,
+            setAsset: setLatestRecordingAsset,
+            errorLabel: "Failed to reload recording asset",
+          });
         } else if (!nextRecordingAssetId) {
           latestRecordingAssetIdRef.current = null;
           setLatestRecordingAsset(null);
@@ -419,7 +451,7 @@ export function useKreakloneSession(): KreakloneSessionHook {
       default:
         break;
     }
-  }, [loadAsset]);
+  }, [hydrateLatestAsset]);
 
   useEffect(() => {
     handleServerMessageRef.current = handleServerMessage;
@@ -600,7 +632,7 @@ export function useKreakloneSession(): KreakloneSessionHook {
       const res = await fetch("/api/refine", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ sessionId: sessionIdRef.current, variantId: frameId })
+        body: JSON.stringify({ sessionId: sessionIdRef.current, frameId })
       });
       if (!res.ok) throw new Error(`Refine failed: ${res.status}`);
     } catch (error) {

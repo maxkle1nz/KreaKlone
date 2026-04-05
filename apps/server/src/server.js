@@ -112,7 +112,7 @@ export function createAppServer(options = {}) {
 
       if (request.method === 'POST' && request.url === '/api/refine') {
         const body = await readJsonBody(request);
-        const result = getRuntime().requestRefine(body.sessionId, body.variantId);
+        const result = getRuntime().requestRefine(body.sessionId, body.frameId ?? body.variantId);
         json(response, 202, result);
         return;
       }

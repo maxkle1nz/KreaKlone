@@ -465,6 +465,55 @@ test('refine and upscale lifecycles publish outputs and persist latest asset ids
   }
 });
 
+test('refine endpoint accepts frameId as the canonical selector', async () => {
+  const workerStack = await startWorkerStack();
+  const appStack = await startAppWithWorkers(workerStack);
+
+  try {
+    const sessionResponse = await fetch(`${appStack.baseUrl}/api/sessions`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({})
+    });
+    const sessionPayload = await sessionResponse.json();
+    const sessionId = sessionPayload.session.sessionId;
+
+    const socket = new WebSocket(appStack.baseUrl.replace('http', 'ws') + '/ws');
+    await new Promise((resolve, reject) => {
+      socket.addEventListener('open', resolve, { once: true });
+      socket.addEventListener('error', reject, { once: true });
+    });
+
+    socket.send(JSON.stringify({ type: 'session.join', payload: { sessionId } }));
+    await waitFor(socket, 'session.state', (payload) => payload.sessionId === sessionId);
+
+    socket.send(JSON.stringify({ type: 'preview.request', payload: { sessionId, burstCount: 1 } }));
+    await waitFor(socket, 'preview.completed', (payload) => payload.sessionId === sessionId);
+
+    const currentSession = appStack.app.runtime.getSession(sessionId);
+    const frameId = currentSession.activeFrameId;
+    assert.equal(typeof frameId, 'string');
+
+    const refineCompleted = waitFor(socket, 'refine.completed', (payload) => payload.sessionId === sessionId);
+    const refineResponse = await fetch(`${appStack.baseUrl}/api/refine`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ sessionId, frameId })
+    });
+    assert.equal(refineResponse.status, 202);
+    const refineEvent = await refineCompleted;
+    assert.equal(refineEvent.payload.sourceVariantId, frameId);
+
+    await new Promise((resolve) => {
+      socket.addEventListener('close', resolve, { once: true });
+      socket.close();
+    });
+  } finally {
+    await appStack.stop();
+    await workerStack.stop();
+  }
+});
+
 test('websocket recording lifecycle clears session capture state after record.stop', async () => {
   const workerStack = await startWorkerStack();
   const appStack = await startAppWithWorkers(workerStack);
