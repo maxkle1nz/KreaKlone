@@ -187,12 +187,13 @@ export function Studio() {
             requestUpscale={() => session.activeFrame ? session.requestUpscaleByAssetId(session.activeFrame.assetId) : Promise.resolve()}
             selectVariant={session.selectFrame}
             latestRefinedAsset={session.latestRefinedAsset}
-            latestUpscaledAsset={session.latestUpscaledAsset}
-            burstCount={frameBudget}
-            setBurstCount={setFrameBudget}
-            composerPreviewUri={null}
-          />
-        </div>
+          latestUpscaledAsset={session.latestUpscaledAsset}
+          burstCount={frameBudget}
+          setBurstCount={setFrameBudget}
+          composerPreviewUri={null}
+          previewProviderMode={session.previewProviderMode}
+        />
+      </div>
       </div>
 
       <div className="yl-prompt-zone">

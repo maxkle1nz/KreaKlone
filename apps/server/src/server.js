@@ -89,10 +89,22 @@ export function createAppServer(options = {}) {
       }
 
       if (request.method === 'GET' && request.url === '/health') {
+        const previewWorkerHealth = getRuntime().workerClients.hasRemotePreview() && process.env.PREVIEW_WORKER_URL
+          ? await fetch(new URL('/health', process.env.PREVIEW_WORKER_URL).toString())
+              .then(async (workerResponse) => (workerResponse.ok ? workerResponse.json() : null))
+              .catch(() => null)
+          : null;
         json(response, 200, {
           ok: true,
           websocketConnections: websocketGateway.connectionCount(),
-          activeSessions: getRuntime().getRuntimeMetrics().session_active_count
+          activeSessions: getRuntime().getRuntimeMetrics().session_active_count,
+          previewWorker: previewWorkerHealth
+            ? {
+                serviceId: previewWorkerHealth.serviceId ?? 'preview-worker',
+                queue: previewWorkerHealth.queue ?? 'preview',
+                previewProvider: previewWorkerHealth.previewProvider ?? null
+              }
+            : null
         });
         return;
       }

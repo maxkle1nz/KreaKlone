@@ -87,6 +87,7 @@ export type KreakloneSessionHook = {
   isGenerating: boolean;
   lastError: string | null;
   pendingReplayCount: number;
+  previewProviderMode: "synthetic" | "real" | "unknown";
   laneStatuses: LaneStatuses;
   sendGenerate: (frameBudget?: number, options?: GenerateOptions) => void;
   sendCancel: () => void;
@@ -187,6 +188,7 @@ export function useKreakloneSession(): KreakloneSessionHook {
   const [isGenerating, setIsGenerating] = useState(false);
   const [lastError, setLastError] = useState<string | null>(null);
   const [pendingReplayCount, setPendingReplayCount] = useState(0);
+  const [previewProviderMode, setPreviewProviderMode] = useState<"synthetic" | "real" | "unknown">("unknown");
   const [laneStatuses, setLaneStatuses] = useState<LaneStatuses>({
     generate: "idle",
     enhance: "idle",
@@ -700,6 +702,7 @@ export function useKreakloneSession(): KreakloneSessionHook {
     isGenerating,
     lastError,
     pendingReplayCount,
+    previewProviderMode,
     laneStatuses,
     sendGenerate,
     sendCancel,
@@ -723,3 +726,19 @@ export function useKreakloneSession(): KreakloneSessionHook {
     requestUpscaleByAssetId,
   };
 }
+  useEffect(() => {
+    let canceled = false;
+    fetch("/health")
+      .then(async (response) => (response.ok ? response.json() : null))
+      .then((payload) => {
+        if (canceled) return;
+        const mode = payload?.previewWorker?.previewProvider?.mode;
+        setPreviewProviderMode(mode === "synthetic" || mode === "real" ? mode : "unknown");
+      })
+      .catch(() => {
+        if (!canceled) setPreviewProviderMode("unknown");
+      });
+    return () => {
+      canceled = true;
+    };
+  }, []);

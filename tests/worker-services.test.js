@@ -28,6 +28,7 @@ test('preview worker scaffold exposes health and manifest endpoints', async () =
     assert.equal(healthResponse.status, 200);
     assert.equal(healthPayload.serviceId, 'preview-worker');
     assert.equal(healthPayload.keepWarm, true);
+    assert.equal(healthPayload.previewProvider.mode, 'synthetic');
 
     const manifestResponse = await fetch(`${baseUrl}/manifest`);
     const manifestPayload = await manifestResponse.json();

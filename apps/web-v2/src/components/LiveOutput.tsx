@@ -11,6 +11,7 @@ type LiveOutputProps = Pick<
   setBurstCount: (n: number) => void;
   composerPreviewUri?: string | null;
   bassPulse?: number;
+  previewProviderMode?: "synthetic" | "real" | "unknown";
 };
 
 function LaneBadge({ label, status }: { label: string; status: LaneStatus }) {
@@ -78,6 +79,7 @@ export function LiveOutput({
   setBurstCount,
   composerPreviewUri,
   bassPulse = 0,
+  previewProviderMode = "unknown",
 }: LiveOutputProps) {
   const liveFrames = liveVariants;
   const activeFrame = activeVariant;
@@ -184,6 +186,12 @@ export function LiveOutput({
       </div>
 
       <div className="yl-output-meta">
+        {previewProviderMode === "synthetic" && (
+          <>
+            <span className="yl-meta-item yl-meta-warning">synthetic preview worker</span>
+            <span className="yl-meta-sep">·</span>
+          </>
+        )}
         <span className="yl-meta-item">
           {frameCount} frame{frameCount !== 1 ? "s" : ""}
         </span>

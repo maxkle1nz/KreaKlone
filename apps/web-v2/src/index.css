@@ -713,6 +713,10 @@ html, body, #root {
   font-family: var(--yl-mono);
 }
 
+.yl-meta-warning {
+  color: #f59e0b;
+}
+
 .yl-meta-sep { color: var(--yl-dim); font-size: 9px; }
 
 .yl-generating-pulse {
