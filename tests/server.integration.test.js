@@ -562,6 +562,69 @@ test('websocket recording lifecycle clears session capture state after record.st
   }
 });
 
+test('record stop endpoint clears session capture state over the public HTTP surface', async () => {
+  const workerStack = await startWorkerStack();
+  const appStack = await startAppWithWorkers(workerStack);
+
+  try {
+    const sessionResponse = await fetch(`${appStack.baseUrl}/api/sessions`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({})
+    });
+    const sessionPayload = await sessionResponse.json();
+    const sessionId = sessionPayload.session.sessionId;
+
+    const socket = new WebSocket(appStack.baseUrl.replace('http', 'ws') + '/ws');
+    await new Promise((resolve, reject) => {
+      socket.addEventListener('open', resolve, { once: true });
+      socket.addEventListener('error', reject, { once: true });
+    });
+
+    socket.send(JSON.stringify({ type: 'session.join', payload: { sessionId } }));
+    await waitFor(socket, 'session.state', (payload) => payload.sessionId === sessionId);
+
+    socket.send(JSON.stringify({ type: 'preview.request', payload: { sessionId, burstCount: 1 } }));
+    await waitFor(socket, 'preview.completed', (payload) => payload.sessionId === sessionId);
+
+    const recordStartedState = waitFor(
+      socket,
+      'session.state',
+      (payload) => payload.sessionId === sessionId && typeof payload.session.latestRecordingAssetId === 'string',
+    );
+    const recordStartResponse = await fetch(`${appStack.baseUrl}/api/record/start`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ sessionId, source: 'output' })
+    });
+    assert.equal(recordStartResponse.status, 202);
+    assert.equal(typeof (await recordStartedState).payload.session.latestRecordingAssetId, 'string');
+
+    const clearedState = waitFor(
+      socket,
+      'session.state',
+      (payload) => payload.sessionId === sessionId && payload.session.latestRecordingAssetId === undefined,
+    );
+    const recordStopResponse = await fetch(`${appStack.baseUrl}/api/record/stop`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ sessionId })
+    });
+    const recordStopPayload = await recordStopResponse.json();
+    assert.equal(recordStopResponse.status, 200);
+    assert.equal(recordStopPayload.cleared, true);
+    await clearedState;
+
+    await new Promise((resolve) => {
+      socket.addEventListener('close', resolve, { once: true });
+      socket.close();
+    });
+  } finally {
+    await appStack.stop();
+    await workerStack.stop();
+  }
+});
+
 test('app server can serve an alternate static web root for web-v2 style deployments', async () => {
   const fixtureRoot = await mkdtemp(join(tmpdir(), 'kreaklone-web-root-'));
   await mkdir(join(fixtureRoot, 'assets'));

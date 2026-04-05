@@ -152,6 +152,13 @@ export function createAppServer(options = {}) {
         return;
       }
 
+      if (request.method === 'POST' && request.url === '/api/record/stop') {
+        const body = await readJsonBody(request);
+        const result = getRuntime().stopRecord(body.sessionId);
+        json(response, 200, result);
+        return;
+      }
+
       if (request.method === 'GET' && request.url === '/api/benchmarks') {
         json(response, 200, getRuntime().getBenchmarks());
         return;

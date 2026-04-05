@@ -1,74 +1,73 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { appendPendingClientMessage } from '../packages/shared/src/pending-client-messages.js';
+import { appendPendingClientMessage, pendingMessageCoalescingKey } from '../packages/shared/src/pending-client-messages.js';
 
-test('pending client message queue coalesces replayable transport intents to the latest version', () => {
-  let queue = [];
+test('pending client messages coalesce prompt updates and preview requests to the latest intent', () => {
+  const queue = [];
 
-  queue = appendPendingClientMessage(queue, {
-    type: 'preview.request',
-    payload: { sessionId: 'session_12345678', burstCount: 2 }
-  });
-  queue = appendPendingClientMessage(queue, {
-    type: 'preview.request',
-    payload: { sessionId: 'session_12345678', burstCount: 4 }
-  });
-  queue = appendPendingClientMessage(queue, {
+  const withPrompt = appendPendingClientMessage(queue, {
     type: 'canvas.event',
     payload: {
       sessionId: 'session_12345678',
       event: { type: 'prompt.update', positive: 'first', negative: '' }
     }
   });
-  queue = appendPendingClientMessage(queue, {
+  const withSecondPrompt = appendPendingClientMessage(withPrompt, {
     type: 'canvas.event',
     payload: {
       sessionId: 'session_12345678',
-      event: { type: 'prompt.update', positive: 'second', negative: '' }
+      event: { type: 'prompt.update', positive: 'second', negative: 'blur' }
     }
   });
-  queue = appendPendingClientMessage(queue, {
+  const withPreview = appendPendingClientMessage(withSecondPrompt, {
+    type: 'preview.request',
+    payload: { sessionId: 'session_12345678', burstCount: 2 }
+  });
+  const withSecondPreview = appendPendingClientMessage(withPreview, {
+    type: 'preview.request',
+    payload: { sessionId: 'session_12345678', burstCount: 8, audioPositionMs: 1440 }
+  });
+
+  assert.equal(withSecondPreview.length, 2);
+  assert.equal(withSecondPreview[0].payload.event.positive, 'second');
+  assert.equal(withSecondPreview[1].payload.burstCount, 8);
+  assert.equal(withSecondPreview[1].payload.audioPositionMs, 1440);
+});
+
+test('pending client messages coalesce timeline playback and loop commands by control lane', () => {
+  const queue = [];
+
+  const withPlay = appendPendingClientMessage(queue, {
     type: 'timeline.play',
     payload: { sessionId: 'session_12345678' }
   });
-  queue = appendPendingClientMessage(queue, {
+  const withPause = appendPendingClientMessage(withPlay, {
     type: 'timeline.pause',
     payload: { sessionId: 'session_12345678' }
   });
+  const withLoopSet = appendPendingClientMessage(withPause, {
+    type: 'timeline.loop.set',
+    payload: { sessionId: 'session_12345678', startFrameId: 'frame_a', endFrameId: 'frame_b' }
+  });
+  const withLoopClear = appendPendingClientMessage(withLoopSet, {
+    type: 'timeline.loop.clear',
+    payload: { sessionId: 'session_12345678' }
+  });
 
-  assert.equal(queue.length, 3);
-  assert.deepEqual(
-    queue.map((message) => message.type),
-    ['preview.request', 'canvas.event', 'timeline.pause']
-  );
-  assert.equal(queue[0].payload.burstCount, 4);
-  assert.equal(queue[1].payload.event.positive, 'second');
+  assert.deepEqual(withLoopClear.map((message) => message.type), ['timeline.pause', 'timeline.loop.clear']);
 });
 
-test('pending client message queue preserves distinct actions that must still replay after reconnect', () => {
-  let queue = [];
-
-  queue = appendPendingClientMessage(queue, {
+test('pending client messages preserve non-coalesced actions', () => {
+  const queue = appendPendingClientMessage([], {
     type: 'timeline.pin',
-    payload: { sessionId: 'session_12345678', frameId: 'frame_a' }
+    payload: { sessionId: 'session_12345678', frameId: 'frame_1' }
   });
-  queue = appendPendingClientMessage(queue, {
+  const nextQueue = appendPendingClientMessage(queue, {
     type: 'timeline.delete',
-    payload: { sessionId: 'session_12345678', frameId: 'frame_b' }
-  });
-  queue = appendPendingClientMessage(queue, {
-    type: 'timeline.seek',
-    payload: { sessionId: 'session_12345678', frameId: 'frame_a' }
-  });
-  queue = appendPendingClientMessage(queue, {
-    type: 'timeline.seek',
-    payload: { sessionId: 'session_12345678', frameId: 'frame_b' }
+    payload: { sessionId: 'session_12345678', frameId: 'frame_2' }
   });
 
-  assert.equal(queue.length, 3);
-  assert.deepEqual(
-    queue.map((message) => message.type),
-    ['timeline.pin', 'timeline.delete', 'timeline.seek']
-  );
-  assert.equal(queue.at(-1).payload.frameId, 'frame_b');
+  assert.equal(nextQueue.length, 2);
+  assert.deepEqual(nextQueue.map((message) => message.type), ['timeline.pin', 'timeline.delete']);
+  assert.equal(pendingMessageCoalescingKey(nextQueue[0]), null);
 });
