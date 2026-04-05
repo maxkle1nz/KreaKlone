@@ -5,3 +5,4 @@ export type PendingClientMessage = {
 
 export function pendingMessageCoalescingKey(message: PendingClientMessage): string | null;
 export function appendPendingClientMessage(queue: PendingClientMessage[], message: PendingClientMessage): PendingClientMessage[];
+export function replacePendingClientMessages(message: PendingClientMessage): PendingClientMessage[];

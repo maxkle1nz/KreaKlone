@@ -277,7 +277,6 @@ export function UnifiedTimeline({
   /* ── Timeline scroll container ── */
   const scrollRef = useRef<HTMLDivElement>(null);
   const [userScrolled, setUserScrolled] = useState(false);
-  const [isPlaying, setIsPlaying] = useState(false);
   const [playFpsInternal, setPlayFpsInternal] = useState(12);
   const playFps = playFpsProp ?? playFpsInternal;
   const setPlayFps = setPlayFpsProp ?? setPlayFpsInternal;
@@ -286,10 +285,12 @@ export function UnifiedTimeline({
 
   /* ── Refs to keep interval callbacks current without stale closures ── */
   const framesRef = useRef<TimelineFrame[]>([]);
+  const activeIndexEffectiveRef = useRef(-1);
   const loopStartIdxRef = useRef(-1);
   const loopEndIdxRef = useRef(-1);
   const effectiveFramesRef = useRef<TimelineFrame[]>([]);
   const sendTimelineSeekRef = useRef(sendTimelineSeek);
+  const framePlaybackRef = useRef(false);
 
   /* ── Active frame index ── */
   const activeIndex = frames.findIndex((f) => f.frameId === activeFrameId);
@@ -403,6 +404,7 @@ export function UnifiedTimeline({
 
   /* ── Active index within sorted effectiveFrames ── */
   const activeIndexEffective = effectiveFrames.findIndex((f) => f.frameId === activeFrameId);
+  activeIndexEffectiveRef.current = activeIndexEffective;
 
   /* ── Loop range indices — derived from effectiveFrames (sorted) ── */
   const loopStartIdx = loopRange ? effectiveFrames.findIndex((f) => f.frameId === loopRange.startFrameId) : -1;
@@ -447,49 +449,66 @@ export function UnifiedTimeline({
     else music.play(music.playheadMs);
   }, [music]);
 
+  const framePlaybackActive = !hasAudio && sessionState?.playback?.isPlaying === true;
+
   /* ── Playback (frame strip) ── */
   const playPauseFrames = useCallback(() => {
     if (hasAudio) {
       musicPlayPause();
       return;
     }
-    if (isPlaying) {
-      setIsPlaying(false);
-      clearInterval(playTimerRef.current!);
+    if (framePlaybackActive) {
       sendTimelinePause();
     } else {
       if (effectiveFramesRef.current.length === 0) return;
-      setIsPlaying(true);
       sendTimelinePlay();
-      playIdxRef.current = activeIndex >= 0 ? activeIndex : 0;
-      playTimerRef.current = setInterval(() => {
-        /* use effectiveFramesRef so we walk frames in their sorted time order */
-        const cur = effectiveFramesRef.current;
-        if (cur.length === 0) return;
-        const loStart = loopStartIdxRef.current;
-        const loEnd = loopEndIdxRef.current;
-        const hasLoop = loStart >= 0 && loEnd > loStart;
-        let next = playIdxRef.current + 1;
-        if (hasLoop) {
-          if (next > loEnd) next = loStart;
-        } else {
-          next = next % cur.length;
-        }
-        playIdxRef.current = next;
-        sendTimelineSeekRef.current(cur[next].frameId);
-      }, 1000 / playFps);
     }
-  }, [hasAudio, isPlaying, activeIndex, sendTimelinePlay, sendTimelinePause, playFps, musicPlayPause]);
-
-  useEffect(() => {
-    if (hasAudio && isPlaying) {
-      setIsPlaying(false);
-      clearInterval(playTimerRef.current!);
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hasAudio]);
+  }, [framePlaybackActive, hasAudio, sendTimelinePause, sendTimelinePlay, musicPlayPause]);
 
   useEffect(() => () => { clearInterval(playTimerRef.current!); }, []);
+
+  useEffect(() => {
+    if (hasAudio) {
+      framePlaybackRef.current = false;
+      clearInterval(playTimerRef.current!);
+      playTimerRef.current = null;
+      return;
+    }
+
+    if (!framePlaybackActive) {
+      framePlaybackRef.current = false;
+      clearInterval(playTimerRef.current!);
+      playTimerRef.current = null;
+      return;
+    }
+
+    if (!framePlaybackRef.current) {
+      playIdxRef.current = activeIndexEffectiveRef.current >= 0 ? activeIndexEffectiveRef.current : 0;
+    }
+
+    framePlaybackRef.current = true;
+    clearInterval(playTimerRef.current!);
+    playTimerRef.current = setInterval(() => {
+      const cur = effectiveFramesRef.current;
+      if (cur.length === 0) return;
+      const loStart = loopStartIdxRef.current;
+      const loEnd = loopEndIdxRef.current;
+      const hasLoop = loStart >= 0 && loEnd > loStart;
+      let next = playIdxRef.current + 1;
+      if (hasLoop) {
+        if (next > loEnd) next = loStart;
+      } else {
+        next = next % cur.length;
+      }
+      playIdxRef.current = next;
+      sendTimelineSeekRef.current(cur[next].frameId);
+    }, 1000 / playFps);
+
+    return () => {
+      clearInterval(playTimerRef.current!);
+      playTimerRef.current = null;
+    };
+  }, [framePlaybackActive, hasAudio, playFps]);
 
   /* ── Music-driven frame selection ── */
   const lastMusicFrameIdRef = useRef<string | null>(null);
@@ -1000,8 +1019,8 @@ export function UnifiedTimeline({
             </>
           ) : (
             <>
-              <button className="yl-ut-btn yl-ut-play" onClick={playPauseFrames} title={(hasAudio ? music.isPlaying : isPlaying) ? "Pause" : "Play"}>
-                {(hasAudio ? music.isPlaying : isPlaying) ? "‖" : "▶"}
+              <button className="yl-ut-btn yl-ut-play" onClick={playPauseFrames} title={(hasAudio ? music.isPlaying : framePlaybackActive) ? "Pause" : "Play"}>
+                {(hasAudio ? music.isPlaying : framePlaybackActive) ? "‖" : "▶"}
               </button>
               <span className="yl-ut-label">FPS</span>
               {[4, 8, 12, 24].map((f) => (

@@ -75,6 +75,35 @@ test('record.stop clears the latest recording asset from session state', async (
   assert.equal(runtime.getSession(session.sessionId).latestRecordingAssetId, undefined);
 });
 
+test('timeline play and pause persist playback state in the session', async () => {
+  const runtime = createMvpRuntime({ previewStepMs: 5, refineStepMs: 5, upscaleStepMs: 5 });
+  const { session } = runtime.createSession('session_playback_state');
+  const delivered = [];
+
+  runtime.joinSession(session.sessionId, {
+    send(serialized) {
+      delivered.push(JSON.parse(serialized));
+    }
+  });
+
+  runtime.handleConnection({
+    onMessage(handler) {
+      handler(JSON.stringify({ type: 'timeline.play', payload: { sessionId: session.sessionId } }));
+      handler(JSON.stringify({ type: 'timeline.pause', payload: { sessionId: session.sessionId } }));
+    },
+    onClose() {}
+  });
+
+  const playbackStates = delivered
+    .filter((message) => message.type === 'session.state')
+    .map((message) => message.payload.session.playback?.isPlaying)
+    .filter((value) => typeof value === 'boolean');
+
+  assert.equal(runtime.getSession(session.sessionId).playback.isPlaying, false);
+  assert.ok(playbackStates.includes(true));
+  assert.ok(playbackStates.includes(false));
+});
+
 test('preview request propagates audioPositionMs into timeline frames', async () => {
   const runtime = createMvpRuntime({ previewStepMs: 5, refineStepMs: 5, upscaleStepMs: 5 });
   const { session } = runtime.createSession('session_audio_timeline');

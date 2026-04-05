@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { applyCanvasEvent, createSessionState } from '../packages/shared/src/session-state.js';
+import { applyCanvasEvent, createSessionState, setPlaybackState } from '../packages/shared/src/session-state.js';
 
 test('session reducer increments version and derives bucketed ROI for brush edits', () => {
   const session = createSessionState('session_12345678');
@@ -27,4 +27,14 @@ test('prompt and references survive later edits', () => {
   assert.equal(session.prompt.positive, 'Golden hour skyline');
   assert.deepEqual(session.references, ['asset_1']);
   assert.equal(session.version, 3);
+});
+
+test('playback reducer persists explicit play/pause state', () => {
+  const session = createSessionState('session_12345678');
+  const playing = setPlaybackState(session, true);
+  const paused = setPlaybackState(playing, false);
+
+  assert.equal(session.playback.isPlaying, false);
+  assert.equal(playing.playback.isPlaying, true);
+  assert.equal(paused.playback.isPlaying, false);
 });

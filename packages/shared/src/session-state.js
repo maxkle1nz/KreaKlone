@@ -20,6 +20,7 @@ export function createSessionState(sessionId = `session_${randomUUID()}`) {
     activeFrameId: undefined,
     timelineFrames: [],
     loopRange: undefined,
+    playback: { isPlaying: false },
     frameCapacity: 48,
     latestRefinedAssetId: undefined,
     latestUpscaledAssetId: undefined,
@@ -45,6 +46,7 @@ export function applyCanvasEvent(state, canvasEvent) {
     activeFrameId: state.activeFrameId,
     timelineFrames: [...state.timelineFrames],
     loopRange: state.loopRange,
+    playback: state.playback,
     latestRefinedAssetId: undefined,
     latestUpscaledAssetId: undefined,
     latestRecordingAssetId: undefined,
@@ -167,6 +169,14 @@ export function clearLoopRange(state) {
   return {
     ...state,
     loopRange: undefined,
+    updatedAt: new Date().toISOString()
+  };
+}
+
+export function setPlaybackState(state, isPlaying) {
+  return {
+    ...state,
+    playback: { ...(state.playback ?? {}), isPlaying },
     updatedAt: new Date().toISOString()
   };
 }

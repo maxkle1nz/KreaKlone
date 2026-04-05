@@ -2,7 +2,7 @@ import { createBenchmarkCatalog } from '../../benchmark/src/scenarios.js';
 import { createQueues } from '../../queues/src/lanes.js';
 import { envelope, isQueueName, normalizeQueueSelection, parseJsonMessage, validateClientEnvelope, validateServerEnvelope } from '../../shared/src/contracts.js';
 import { createPreviewJob, createRefineJob, createUpscaleJob } from '../../shared/src/jobs.js';
-import { applyCanvasEvent, appendTimelineFrame, clearCaptureAsset, clearLoopRange, deleteTimelineFrame, pinTimelineFrame, recordCaptureAsset, recordGeneratedSeeds, recordRefinedAsset, recordUpscaledAsset, selectVariant, setFrameCapacity, setLoopRange } from '../../shared/src/session-state.js';
+import { applyCanvasEvent, appendTimelineFrame, clearCaptureAsset, clearLoopRange, deleteTimelineFrame, pinTimelineFrame, recordCaptureAsset, recordGeneratedSeeds, recordRefinedAsset, recordUpscaledAsset, selectVariant, setFrameCapacity, setLoopRange, setPlaybackState } from '../../shared/src/session-state.js';
 import { InMemoryAssetStore } from './asset-store.js';
 import { InMemorySessionStore } from './session-store.js';
 import { WorkerClients } from './worker-clients.js';
@@ -160,6 +160,18 @@ export class MvpRuntime {
           case 'preview.cancel':
             this.cancelQueues(message.payload.sessionId, normalizeQueueSelection(message.payload.queue), 'client requested cancellation');
             break;
+          case 'timeline.play': {
+            const nextSession = setPlaybackState(this.ensureSession(message.payload.sessionId), true);
+            this.sessions.save(nextSession);
+            this.#sendSessionState(nextSession.sessionId);
+            break;
+          }
+          case 'timeline.pause': {
+            const nextSession = setPlaybackState(this.ensureSession(message.payload.sessionId), false);
+            this.sessions.save(nextSession);
+            this.#sendSessionState(nextSession.sessionId);
+            break;
+          }
           case 'timeline.seek': {
             const nextSession = selectVariant(this.ensureSession(message.payload.sessionId), message.payload.frameId);
             this.sessions.save(nextSession);

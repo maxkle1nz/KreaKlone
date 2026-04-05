@@ -1,5 +1,5 @@
 import { useEffect, useRef, useCallback, useState } from "react";
-import { appendPendingClientMessage } from "../../../../packages/shared/src/pending-client-messages.js";
+import { appendPendingClientMessage, replacePendingClientMessages } from "../../../../packages/shared/src/pending-client-messages.js";
 
 export type SessionState = {
   sessionId: string;
@@ -8,6 +8,7 @@ export type SessionState = {
   timelineFrames: TimelineFrame[];
   activeFrameId?: string;
   loopRange?: { startFrameId: string; endFrameId: string };
+  playback?: { isPlaying?: boolean };
   frameCapacity?: number;
   latestRefinedAssetId?: string;
   latestUpscaledAssetId?: string;
@@ -556,12 +557,19 @@ export function useKreakloneSession(): KreakloneSessionHook {
 
   const sendCancel = useCallback(() => {
     if (!sessionIdRef.current) return;
-    pendingClientMessagesRef.current = [];
-    send({ type: "preview.cancel", payload: { sessionId: sessionIdRef.current, queue: "all" } }, { queueIfDisconnected: true });
+    const cancelMessage = { type: "preview.cancel", payload: { sessionId: sessionIdRef.current, queue: "all" } } satisfies ClientMessage;
+    const socket = ws.current;
+    if (socket && socket.readyState === WebSocket.OPEN) {
+      pendingClientMessagesRef.current = [];
+      socket.send(JSON.stringify(cancelMessage));
+    } else {
+      pendingClientMessagesRef.current = replacePendingClientMessages(cancelMessage);
+      setStatus("connecting");
+    }
     setIsGenerating(false);
     setLastError(null);
     setLaneStatuses({ generate: "idle", enhance: "idle", upscale: "idle" });
-  }, [send]);
+  }, []);
 
   const sendCanvasEvent = useCallback((event: CanvasEventPayload) => {
     if (!sessionIdRef.current) return;

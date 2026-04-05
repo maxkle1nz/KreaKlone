@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { appendPendingClientMessage, pendingMessageCoalescingKey } from '../packages/shared/src/pending-client-messages.js';
+import { appendPendingClientMessage, pendingMessageCoalescingKey, replacePendingClientMessages } from '../packages/shared/src/pending-client-messages.js';
 
 test('pending client messages coalesce prompt updates and preview requests to the latest intent', () => {
   const queue = [];
@@ -70,4 +70,29 @@ test('pending client messages preserve non-coalesced actions', () => {
   assert.equal(nextQueue.length, 2);
   assert.deepEqual(nextQueue.map((message) => message.type), ['timeline.pin', 'timeline.delete']);
   assert.equal(pendingMessageCoalescingKey(nextQueue[0]), null);
+});
+
+test('pending client cancel replaces queued replay actions', () => {
+  const queued = appendPendingClientMessage([], {
+    type: 'preview.request',
+    payload: { sessionId: 'session_12345678', burstCount: 4 }
+  });
+  const withPrompt = appendPendingClientMessage(queued, {
+    type: 'canvas.event',
+    payload: {
+      sessionId: 'session_12345678',
+      event: { type: 'prompt.update', positive: 'keep', negative: '' }
+    }
+  });
+
+  const canceled = replacePendingClientMessages({
+    type: 'preview.cancel',
+    payload: { sessionId: 'session_12345678', queue: 'all' }
+  });
+
+  assert.equal(withPrompt.length, 2);
+  assert.deepEqual(canceled, [{
+    type: 'preview.cancel',
+    payload: { sessionId: 'session_12345678', queue: 'all' }
+  }]);
 });

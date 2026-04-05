@@ -32,3 +32,7 @@ export function appendPendingClientMessage(queue, message) {
     message
   ];
 }
+
+export function replacePendingClientMessages(message) {
+  return [message];
+}
