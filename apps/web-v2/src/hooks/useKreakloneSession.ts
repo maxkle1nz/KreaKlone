@@ -57,6 +57,11 @@ export type GenerateOptions = {
   audioPositionMs?: number | null;
 };
 
+type ClientMessage = {
+  type: string;
+  payload: Record<string, unknown>;
+};
+
 export type CanvasEventPayload =
   | { type: "brush"; strokeId: string; layerId: string; size: number; points: number[] }
   | { type: "erase"; strokeId: string; layerId: string; size: number; points: number[] }
@@ -109,6 +114,7 @@ function buildWsUrl(): string {
 
 const MIN_RECONNECT_MS = 500;
 const MAX_RECONNECT_MS = 30_000;
+const MAX_PENDING_CLIENT_MESSAGES = 100;
 
 function queueToLane(queue: unknown): keyof LaneStatuses {
   if (queue === "refine") return "enhance";
@@ -191,12 +197,42 @@ export function useKreakloneSession(): KreakloneSessionHook {
   const latestRefinedAssetIdRef = useRef<string | null>(null);
   const latestUpscaledAssetIdRef = useRef<string | null>(null);
   const latestRecordingAssetIdRef = useRef<string | null>(null);
+  const pendingClientMessagesRef = useRef<ClientMessage[]>([]);
 
-  const send = useCallback((msg: object) => {
-    if (ws.current && ws.current.readyState === WebSocket.OPEN) {
-      ws.current.send(JSON.stringify(msg));
+  const enqueuePendingMessage = useCallback((message: ClientMessage) => {
+    const queued = [...pendingClientMessagesRef.current, message];
+    if (queued.length > MAX_PENDING_CLIENT_MESSAGES) {
+      pendingClientMessagesRef.current = queued.slice(-MAX_PENDING_CLIENT_MESSAGES);
+      setLastError(`Connection interrupted — replaying latest ${MAX_PENDING_CLIENT_MESSAGES} actions`);
+      return;
     }
+    pendingClientMessagesRef.current = queued;
   }, []);
+
+  const flushPendingMessages = useCallback((socket: WebSocket) => {
+    if (pendingClientMessagesRef.current.length === 0) {
+      return;
+    }
+    const queued = pendingClientMessagesRef.current;
+    pendingClientMessagesRef.current = [];
+    queued.forEach((message) => {
+      socket.send(JSON.stringify(message));
+    });
+  }, []);
+
+  const send = useCallback((msg: ClientMessage, options: { queueIfDisconnected?: boolean } = {}) => {
+    const socket = ws.current;
+    if (socket && socket.readyState === WebSocket.OPEN) {
+      socket.send(JSON.stringify(msg));
+      return true;
+    }
+    if (options.queueIfDisconnected !== false && sessionIdRef.current) {
+      enqueuePendingMessage(msg);
+      setStatus("connecting");
+      setLastError((prev) => prev ?? "Connection interrupted — reconnecting…");
+    }
+    return false;
+  }, [enqueuePendingMessage]);
 
   const loadAsset = useCallback(async (assetId: string) => {
     const response = await fetch(`/api/assets/${assetId}`);
@@ -380,6 +416,11 @@ export function useKreakloneSession(): KreakloneSessionHook {
 
   const connectWs = useCallback((sid: string) => {
     if (!isMounted.current) return;
+    if (reconnectTimer.current) {
+      clearTimeout(reconnectTimer.current);
+      reconnectTimer.current = null;
+    }
+    setStatus("connecting");
     const socket = new WebSocket(buildWsUrl());
     ws.current = socket;
 
@@ -388,7 +429,8 @@ export function useKreakloneSession(): KreakloneSessionHook {
       reconnectDelay.current = MIN_RECONNECT_MS;
       setStatus("connected");
       setLastError(null);
-      send({ type: "session.join", payload: { sessionId: sid } });
+      socket.send(JSON.stringify({ type: "session.join", payload: { sessionId: sid } satisfies ClientMessage["payload"] }));
+      flushPendingMessages(socket);
     };
 
     socket.onmessage = (evt) => {
@@ -404,7 +446,8 @@ export function useKreakloneSession(): KreakloneSessionHook {
     socket.onclose = () => {
       if (!isMounted.current) return;
       ws.current = null;
-      setStatus("disconnected");
+      setStatus("connecting");
+      setLastError((prev) => prev ?? "Connection lost — reconnecting…");
       const delay = reconnectDelay.current;
       reconnectDelay.current = Math.min(delay * 2, MAX_RECONNECT_MS);
       reconnectTimer.current = setTimeout(() => {
@@ -450,6 +493,7 @@ export function useKreakloneSession(): KreakloneSessionHook {
     return () => {
       isMounted.current = false;
       if (reconnectTimer.current) clearTimeout(reconnectTimer.current);
+      pendingClientMessagesRef.current = [];
       ws.current?.close();
     };
   }, [connectWs]);
@@ -462,20 +506,20 @@ export function useKreakloneSession(): KreakloneSessionHook {
         sessionId: sessionIdRef.current,
         burstCount: frameBudget,
         ...(typeof options.audioPositionMs === "number" ? { audioPositionMs: options.audioPositionMs } : {}),
-      }
-    });
+      },
+    }, { queueIfDisconnected: true });
   }, [send]);
 
   const sendCancel = useCallback(() => {
     if (!sessionIdRef.current) return;
-    send({ type: "preview.cancel", payload: { sessionId: sessionIdRef.current, queue: "all" } });
+    send({ type: "preview.cancel", payload: { sessionId: sessionIdRef.current, queue: "all" } }, { queueIfDisconnected: true });
     setIsGenerating(false);
     setLaneStatuses({ generate: "idle", enhance: "idle", upscale: "idle" });
   }, [send]);
 
   const sendCanvasEvent = useCallback((event: CanvasEventPayload) => {
     if (!sessionIdRef.current) return;
-    send({ type: "canvas.event", payload: { sessionId: sessionIdRef.current, event } });
+    send({ type: "canvas.event", payload: { sessionId: sessionIdRef.current, event } }, { queueIfDisconnected: true });
   }, [send]);
 
   const sendPromptUpdate = useCallback((positive: string, negative = "") => {
@@ -484,52 +528,52 @@ export function useKreakloneSession(): KreakloneSessionHook {
 
   const sendTimelineSeek = useCallback((frameId: string) => {
     if (!sessionIdRef.current) return;
-    send({ type: "timeline.seek", payload: { sessionId: sessionIdRef.current, frameId } });
+    send({ type: "timeline.seek", payload: { sessionId: sessionIdRef.current, frameId } }, { queueIfDisconnected: true });
   }, [send]);
 
   const sendTimelinePlay = useCallback(() => {
     if (!sessionIdRef.current) return;
-    send({ type: "timeline.play", payload: { sessionId: sessionIdRef.current } });
+    send({ type: "timeline.play", payload: { sessionId: sessionIdRef.current } }, { queueIfDisconnected: true });
   }, [send]);
 
   const sendTimelinePause = useCallback(() => {
     if (!sessionIdRef.current) return;
-    send({ type: "timeline.pause", payload: { sessionId: sessionIdRef.current } });
+    send({ type: "timeline.pause", payload: { sessionId: sessionIdRef.current } }, { queueIfDisconnected: true });
   }, [send]);
 
   const sendLoopSet = useCallback((startFrameId: string, endFrameId: string) => {
     if (!sessionIdRef.current) return;
-    send({ type: "timeline.loop.set", payload: { sessionId: sessionIdRef.current, startFrameId, endFrameId } });
+    send({ type: "timeline.loop.set", payload: { sessionId: sessionIdRef.current, startFrameId, endFrameId } }, { queueIfDisconnected: true });
   }, [send]);
 
   const sendLoopClear = useCallback(() => {
     if (!sessionIdRef.current) return;
-    send({ type: "timeline.loop.clear", payload: { sessionId: sessionIdRef.current } });
+    send({ type: "timeline.loop.clear", payload: { sessionId: sessionIdRef.current } }, { queueIfDisconnected: true });
   }, [send]);
 
   const sendRecordStart = useCallback((source: "output" | "full-session" = "output") => {
     if (!sessionIdRef.current) return;
-    send({ type: "record.start", payload: { sessionId: sessionIdRef.current, source } });
+    send({ type: "record.start", payload: { sessionId: sessionIdRef.current, source } }, { queueIfDisconnected: true });
   }, [send]);
 
   const sendRecordStop = useCallback(() => {
     if (!sessionIdRef.current) return;
-    send({ type: "record.stop", payload: { sessionId: sessionIdRef.current } });
+    send({ type: "record.stop", payload: { sessionId: sessionIdRef.current } }, { queueIfDisconnected: true });
   }, [send]);
 
   const pinFrame = useCallback((frameId: string) => {
     if (!sessionIdRef.current) return;
-    send({ type: "timeline.pin", payload: { sessionId: sessionIdRef.current, frameId } });
+    send({ type: "timeline.pin", payload: { sessionId: sessionIdRef.current, frameId } }, { queueIfDisconnected: true });
   }, [send]);
 
   const deleteFrame = useCallback((frameId: string) => {
     if (!sessionIdRef.current) return;
-    send({ type: "timeline.delete", payload: { sessionId: sessionIdRef.current, frameId } });
+    send({ type: "timeline.delete", payload: { sessionId: sessionIdRef.current, frameId } }, { queueIfDisconnected: true });
   }, [send]);
 
   const setFrameCapacity = useCallback((n: number) => {
     if (!sessionIdRef.current) return;
-    send({ type: "timeline.capacity.set", payload: { sessionId: sessionIdRef.current, frameCapacity: n } });
+    send({ type: "timeline.capacity.set", payload: { sessionId: sessionIdRef.current, frameCapacity: n } }, { queueIfDisconnected: true });
   }, [send]);
 
   const selectFrame = useCallback((frame: PreviewFrame) => {
