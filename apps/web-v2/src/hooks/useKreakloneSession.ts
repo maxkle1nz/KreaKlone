@@ -249,6 +249,14 @@ export function useKreakloneSession(): KreakloneSessionHook {
   }, []);
 
   const handleServerMessageRef = useRef<(msg: { type: string; payload: Record<string, unknown> }) => void>(() => {});
+  const markLaneError = useCallback((lane: keyof LaneStatuses, error: unknown) => {
+    const message = error instanceof Error ? error.message : "Request failed";
+    setLastError(message);
+    setLaneStatuses((prev) => ({
+      ...prev,
+      [lane]: "error",
+    }));
+  }, []);
 
   const handleServerMessage = useCallback((msg: { type: string; payload: Record<string, unknown> }) => {
     switch (msg.type) {
@@ -309,6 +317,7 @@ export function useKreakloneSession(): KreakloneSessionHook {
         break;
       }
       case "preview.started":
+        setLastError(null);
         setIsGenerating(true);
         setLaneStatuses((prev) => ({ ...prev, generate: "working" }));
         break;
@@ -337,6 +346,7 @@ export function useKreakloneSession(): KreakloneSessionHook {
       }
       case "refine.completed": {
         const payload = msg.payload as { assetId: string; uri: string; sourceVariantId?: string };
+        setLastError(null);
         latestRefinedAssetIdRef.current = String(payload.assetId);
         setLatestRefinedAsset({
           assetId: String(payload.assetId),
@@ -361,6 +371,7 @@ export function useKreakloneSession(): KreakloneSessionHook {
       }
       case "upscale.completed": {
         const payload = msg.payload as { assetId: string; uri: string; sourceVariantId?: string };
+        setLastError(null);
         latestUpscaledAssetIdRef.current = String(payload.assetId);
         setLatestUpscaledAsset({
           assetId: String(payload.assetId),
@@ -583,14 +594,20 @@ export function useKreakloneSession(): KreakloneSessionHook {
 
   const requestRefineByFrameId = useCallback(async (frameId: string) => {
     if (!sessionIdRef.current) return;
+    setLastError(null);
     setLaneStatuses((prev) => ({ ...prev, enhance: "working" }));
-    const res = await fetch("/api/refine", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ sessionId: sessionIdRef.current, variantId: frameId })
-    });
-    if (!res.ok) throw new Error(`Refine failed: ${res.status}`);
-  }, []);
+    try {
+      const res = await fetch("/api/refine", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ sessionId: sessionIdRef.current, variantId: frameId })
+      });
+      if (!res.ok) throw new Error(`Refine failed: ${res.status}`);
+    } catch (error) {
+      markLaneError("enhance", error);
+      throw error;
+    }
+  }, [markLaneError]);
 
   const requestRefine = useCallback(async () => {
     if (!activeFrame) return;
@@ -599,14 +616,20 @@ export function useKreakloneSession(): KreakloneSessionHook {
 
   const requestUpscaleByAssetId = useCallback(async (assetId: string) => {
     if (!sessionIdRef.current) return;
+    setLastError(null);
     setLaneStatuses((prev) => ({ ...prev, upscale: "working" }));
-    const res = await fetch("/api/upscale", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ sessionId: sessionIdRef.current, assetId })
-    });
-    if (!res.ok) throw new Error(`Upscale failed: ${res.status}`);
-  }, []);
+    try {
+      const res = await fetch("/api/upscale", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ sessionId: sessionIdRef.current, assetId })
+      });
+      if (!res.ok) throw new Error(`Upscale failed: ${res.status}`);
+    } catch (error) {
+      markLaneError("upscale", error);
+      throw error;
+    }
+  }, [markLaneError]);
 
   const requestUpscale = useCallback(async () => {
     if (!activeFrame) return;
