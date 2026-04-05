@@ -46,7 +46,7 @@ function FrameThumb({
     <button
       className={`yl-variant-thumb${isActive ? " active" : ""}`}
       onClick={onClick}
-      title={`Variant ${variant.ordinal + 1}`}
+      title={`Frame ${variant.ordinal + 1}`}
     >
       <img src={variant.uri} alt={`Frame ${variant.ordinal + 1}`} loading="lazy" />
       <span className="yl-variant-ordinal">{variant.ordinal + 1}</span>
@@ -68,6 +68,9 @@ export function LiveOutput({
   composerPreviewUri,
   bassPulse = 0,
 }: LiveOutputProps) {
+  const liveFrames = liveVariants;
+  const activeFrame = activeVariant;
+  const selectFrame = selectVariant;
   const displayUri = composerPreviewUri ?? activeVariant?.uri ?? null;
   const frameCount = sessionState?.timelineFrames?.length ?? 0;
 
@@ -97,7 +100,7 @@ export function LiveOutput({
             );
           })}
         </div>
-        {activeVariant && (
+        {activeFrame && (
           <div className="yl-output-actions">
             <button
               className="yl-action-pill"
@@ -148,12 +151,12 @@ export function LiveOutput({
         <span className="yl-meta-item">
           {frameCount} frame{frameCount !== 1 ? "s" : ""}
         </span>
-        {activeVariant && (
+        {activeFrame && (
           <>
             <span className="yl-meta-sep">·</span>
-            <span className="yl-meta-item">variant {activeVariant.ordinal + 1}</span>
+            <span className="yl-meta-item">frame {activeFrame.ordinal + 1}</span>
             <span className="yl-meta-sep">·</span>
-            <span className="yl-meta-item yl-mono">{activeVariant.assetId.slice(0, 8)}</span>
+            <span className="yl-meta-item yl-mono">{activeFrame.assetId.slice(0, 8)}</span>
           </>
         )}
         {isGenerating && (
@@ -164,16 +167,16 @@ export function LiveOutput({
         )}
       </div>
 
-      {liveVariants.length > 0 && (
+      {liveFrames.length > 0 && (
         <div className="yl-variants-strip">
-          <div className="yl-variants-label">Variants</div>
+          <div className="yl-variants-label">Frames</div>
           <div className="yl-variants-row">
-            {liveVariants.map((v) => (
+            {liveFrames.map((v) => (
               <FrameThumb
                 key={v.variantId}
                 variant={v}
-                isActive={v.variantId === activeVariant?.variantId}
-                onClick={() => selectVariant(v)}
+                isActive={v.variantId === activeFrame?.variantId}
+                onClick={() => selectFrame(v)}
               />
             ))}
           </div>
