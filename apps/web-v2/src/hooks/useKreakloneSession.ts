@@ -1,4 +1,5 @@
 import { useEffect, useRef, useCallback, useState } from "react";
+import { appendPendingClientMessage } from "../../../../packages/shared/src/pending-client-messages.js";
 
 export type SessionState = {
   sessionId: string;
@@ -200,7 +201,7 @@ export function useKreakloneSession(): KreakloneSessionHook {
   const pendingClientMessagesRef = useRef<ClientMessage[]>([]);
 
   const enqueuePendingMessage = useCallback((message: ClientMessage) => {
-    const queued = [...pendingClientMessagesRef.current, message];
+    const queued = appendPendingClientMessage(pendingClientMessagesRef.current, message);
     if (queued.length > MAX_PENDING_CLIENT_MESSAGES) {
       pendingClientMessagesRef.current = queued.slice(-MAX_PENDING_CLIENT_MESSAGES);
       setLastError(`Connection interrupted — replaying latest ${MAX_PENDING_CLIENT_MESSAGES} actions`);
@@ -555,8 +556,10 @@ export function useKreakloneSession(): KreakloneSessionHook {
 
   const sendCancel = useCallback(() => {
     if (!sessionIdRef.current) return;
+    pendingClientMessagesRef.current = [];
     send({ type: "preview.cancel", payload: { sessionId: sessionIdRef.current, queue: "all" } }, { queueIfDisconnected: true });
     setIsGenerating(false);
+    setLastError(null);
     setLaneStatuses({ generate: "idle", enhance: "idle", upscale: "idle" });
   }, [send]);
 
