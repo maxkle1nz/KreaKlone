@@ -46,6 +46,18 @@ def _run(command: str, cwd: Path | None = None, env: dict | None = None) -> None
     )
 
 
+def _prepare_filtered_requirements() -> Path:
+    filtered = WORKSPACE / "comfy-requirements.filtered.txt"
+    source = COMFY_ROOT / "requirements.txt"
+    filtered_lines = [
+        line
+        for line in source.read_text().splitlines()
+        if line.strip() and not line.lstrip().startswith(("torch", "torchvision", "torchaudio"))
+    ]
+    filtered.write_text("\n".join(filtered_lines) + "\n")
+    return filtered
+
+
 def _wait_for(url: str, timeout_s: int) -> None:
     started = time.time()
     while time.time() - started < timeout_s:
@@ -84,7 +96,8 @@ def _ensure_comfy_runtime() -> None:
         "torch==2.5.1 torchvision==0.20.1 torchaudio==2.5.1 "
         "--index-url https://download.pytorch.org/whl/cu124"
     )
-    _run(f". {COMFY_VENV}/bin/activate && python -m pip install --progress-bar off -r {COMFY_ROOT}/requirements.txt")
+    filtered_requirements = _prepare_filtered_requirements()
+    _run(f". {COMFY_VENV}/bin/activate && python -m pip install --progress-bar off -r {filtered_requirements}")
     COMFY_SETUP_MARKER.write_text("ok")
 
 
