@@ -53,6 +53,15 @@
           "description": "Filename expected by the default ComfyUI workflow.",
           "default": "sdxl_turbo.safetensors"
         }
+      },
+      {
+        "key": "WORKER_BACKEND_MODE",
+        "input": {
+          "type": "string",
+          "name": "Backend mode",
+          "description": "Use comfyui for real generation or synthetic for lightweight testing.",
+          "default": "comfyui"
+        }
       }
     ]
   }

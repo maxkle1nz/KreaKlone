@@ -39,6 +39,10 @@
       {
         "key": "MODEL_ALIAS",
         "value": "sdxl_turbo.safetensors"
+      },
+      {
+        "key": "WORKER_BACKEND_MODE",
+        "value": "synthetic"
       }
     ],
     "allowedCudaVersions": [
