@@ -73,11 +73,11 @@ def _wait_for(url: str, timeout_s: int) -> None:
 
 def _ensure_layout() -> None:
     LOG_DIR.mkdir(parents=True, exist_ok=True)
-    CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
     if not REPO_ROOT.exists():
         raise RuntimeError(f"Expected repo checkout at {REPO_ROOT}")
-    if not COMFY_ROOT.exists():
+    if not (COMFY_ROOT / "requirements.txt").exists():
         _run("git clone https://github.com/comfyanonymous/ComfyUI.git /workspace/ComfyUI")
+    CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
 
     source_workflow = REPO_ROOT / ".runpod" / "comfy-workflow.json"
     if not WORKFLOW_PATH.exists():
