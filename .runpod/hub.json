@@ -1,0 +1,56 @@
+{
+  "title": "KreaKlone Comfy Preview Worker",
+  "description": "RunPod Serverless worker that boots ComfyUI plus the KreaKlone preview adapter and returns real preview images through the existing Ylimit-compatible response contract.",
+  "type": "serverless",
+  "category": "image",
+  "config": {
+    "runsOn": "GPU",
+    "containerDiskInGb": 50,
+    "presets": [
+      {
+        "name": "SDXL Turbo Preview",
+        "defaults": {
+          "MODEL_REPO": "stabilityai/sdxl-turbo",
+          "MODEL_FILE": "sd_xl_turbo_1.0_fp16.safetensors",
+          "MODEL_ALIAS": "sdxl_turbo.safetensors",
+          "COMFYUI_POSITIVE_NODE_ID": "6",
+          "COMFYUI_NEGATIVE_NODE_ID": "7",
+          "COMFYUI_SEED_NODE_ID": "3",
+          "COMFYUI_WIDTH_NODE_ID": "5",
+          "COMFYUI_HEIGHT_NODE_ID": "5",
+          "COMFYUI_BATCH_NODE_ID": "5",
+          "COMFYUI_OUTPUT_NODE_ID": "9"
+        }
+      }
+    ],
+    "env": [
+      {
+        "key": "MODEL_REPO",
+        "input": {
+          "type": "string",
+          "name": "Model repository",
+          "description": "Hugging Face repo to download the preview checkpoint from.",
+          "default": "stabilityai/sdxl-turbo"
+        }
+      },
+      {
+        "key": "MODEL_FILE",
+        "input": {
+          "type": "string",
+          "name": "Model filename",
+          "description": "Checkpoint filename inside the model repository.",
+          "default": "sd_xl_turbo_1.0_fp16.safetensors"
+        }
+      },
+      {
+        "key": "MODEL_ALIAS",
+        "input": {
+          "type": "string",
+          "name": "Workflow checkpoint alias",
+          "description": "Filename expected by the default ComfyUI workflow.",
+          "default": "sdxl_turbo.safetensors"
+        }
+      }
+    ]
+  }
+}

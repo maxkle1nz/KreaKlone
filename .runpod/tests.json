@@ -1,0 +1,55 @@
+{
+  "tests": [
+    {
+      "name": "preview_generation_roundtrip",
+      "input": {
+        "job": {
+          "jobId": "hub_preview_test",
+          "sessionId": "hub_session_test",
+          "sessionVersion": 1,
+          "burstCount": 1,
+          "audioPositionMs": null,
+          "roi": {
+            "x": 0,
+            "y": 0,
+            "width": 1024,
+            "height": 1024
+          },
+          "prompt": {
+            "positive": "a cinematic surreal landscape, golden hour, ultra detailed",
+            "negative": "blurry, low quality, watermark"
+          }
+        }
+      },
+      "timeout": 240000
+    }
+  ],
+  "config": {
+    "gpuTypeId": "NVIDIA GeForce RTX 4090",
+    "gpuCount": 1,
+    "env": [
+      {
+        "key": "MODEL_REPO",
+        "value": "stabilityai/sdxl-turbo"
+      },
+      {
+        "key": "MODEL_FILE",
+        "value": "sd_xl_turbo_1.0_fp16.safetensors"
+      },
+      {
+        "key": "MODEL_ALIAS",
+        "value": "sdxl_turbo.safetensors"
+      }
+    ],
+    "allowedCudaVersions": [
+      "12.7",
+      "12.6",
+      "12.5",
+      "12.4",
+      "12.3",
+      "12.2",
+      "12.1",
+      "12.0"
+    ]
+  }
+}
