@@ -14,6 +14,8 @@ COMFY_ROOT = WORKSPACE / "ComfyUI"
 LOG_DIR = WORKSPACE / "runpod-logs"
 CHECKPOINT_DIR = COMFY_ROOT / "models" / "checkpoints"
 WORKFLOW_PATH = WORKSPACE / "comfy-workflow.json"
+COMFY_VENV = COMFY_ROOT / ".venv"
+COMFY_SETUP_MARKER = COMFY_ROOT / ".kreaklone_bootstrap_complete"
 
 COMFY_PORT = int(os.getenv("COMFY_PORT", "8188"))
 ADAPTER_PORT = int(os.getenv("ADAPTER_PORT", "8189"))
@@ -35,6 +37,15 @@ _comfy_process = None
 _adapter_process = None
 
 
+def _run(command: str, cwd: Path | None = None, env: dict | None = None) -> None:
+    subprocess.run(
+        ["bash", "-lc", command],
+        cwd=str(cwd) if cwd else None,
+        env=env,
+        check=True,
+    )
+
+
 def _wait_for(url: str, timeout_s: int) -> None:
     started = time.time()
     while time.time() - started < timeout_s:
@@ -52,13 +63,29 @@ def _ensure_layout() -> None:
     LOG_DIR.mkdir(parents=True, exist_ok=True)
     CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
     if not REPO_ROOT.exists():
-      raise RuntimeError(f"Expected repo checkout at {REPO_ROOT}")
+        raise RuntimeError(f"Expected repo checkout at {REPO_ROOT}")
     if not COMFY_ROOT.exists():
-      raise RuntimeError(f"Expected ComfyUI checkout at {COMFY_ROOT}")
+        _run("git clone https://github.com/comfyanonymous/ComfyUI.git /workspace/ComfyUI")
 
     source_workflow = REPO_ROOT / ".runpod" / "comfy-workflow.json"
     if not WORKFLOW_PATH.exists():
         WORKFLOW_PATH.write_text(source_workflow.read_text())
+
+
+def _ensure_comfy_runtime() -> None:
+    if COMFY_SETUP_MARKER.exists():
+        return
+
+    _run(f"python3 -m venv {COMFY_VENV}")
+    _run(f". {COMFY_VENV}/bin/activate && python -m pip install --upgrade pip requests huggingface_hub")
+    _run(
+        f". {COMFY_VENV}/bin/activate && "
+        "python -m pip install --progress-bar off "
+        "torch==2.5.1 torchvision==0.20.1 torchaudio==2.5.1 "
+        "--index-url https://download.pytorch.org/whl/cu124"
+    )
+    _run(f". {COMFY_VENV}/bin/activate && python -m pip install --progress-bar off -r {COMFY_ROOT}/requirements.txt")
+    COMFY_SETUP_MARKER.write_text("ok")
 
 
 def _ensure_checkpoint() -> None:
@@ -81,9 +108,10 @@ def _ensure_comfy() -> None:
     if _comfy_process and _comfy_process.poll() is None:
         return
 
+    _ensure_comfy_runtime()
     log_file = open(LOG_DIR / "comfyui.log", "a")
     _comfy_process = subprocess.Popen(
-        ["bash", "-lc", f"cd {COMFY_ROOT} && . .venv/bin/activate && python main.py --listen {HOST} --port {COMFY_PORT}"],
+        ["bash", "-lc", f"cd {COMFY_ROOT} && . {COMFY_VENV}/bin/activate && python main.py --listen {HOST} --port {COMFY_PORT}"],
         stdout=log_file,
         stderr=subprocess.STDOUT,
     )
