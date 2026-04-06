@@ -5,7 +5,10 @@
   "category": "image",
   "config": {
     "runsOn": "GPU",
+    "endpointType": "LB",
     "containerDiskInGb": 50,
+    "gpuCount": 1,
+    "gpuIds": "NVIDIA GeForce RTX 4090",
     "presets": [
       {
         "name": "SDXL Turbo Preview",
