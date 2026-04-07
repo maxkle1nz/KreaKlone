@@ -8,7 +8,7 @@
     "endpointType": "LB",
     "containerDiskInGb": 50,
     "gpuCount": 1,
-    "gpuIds": "NVIDIA GeForce RTX 4090",
+    "gpuIds": "ADA_24",
     "presets": [
       {
         "name": "SDXL Turbo Preview",
