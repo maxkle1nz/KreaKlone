@@ -58,3 +58,32 @@ PREVIEW_REAL_ADAPTER_URL=https://your-runpod-endpoint
 
 - The adapter currently returns base64 data URIs, which keeps the existing KreaKlone preview worker contract unchanged.
 - If you later want object-storage URLs instead of data URIs, change the adapter output shape in one place without rewriting the preview worker.
+
+## Docker build and push
+
+If the RunPod Hub GitHub builder keeps failing, use this image path directly from a registry such as Docker Hub.
+
+Example:
+
+```bash
+docker build --platform linux/amd64 -f serverless/comfy-lb-worker/Dockerfile -t your-dockerhub-user/kreaklone-comfy-lb:latest .
+docker push your-dockerhub-user/kreaklone-comfy-lb:latest
+```
+
+Then deploy that image through:
+
+- RunPod Serverless endpoint
+- or a custom Pod / Pod Template
+
+## Recommended deploy modes
+
+### 1. Stable fallback
+
+- Run the adapter image from Docker Hub
+- Point it at a separately managed ComfyUI instance
+
+### 2. Fully managed publication path
+
+- Use the `.runpod/` worker for RunPod Hub / GitHub integration
+
+The Docker image path is the more deterministic route when the Hub builder is unstable.
